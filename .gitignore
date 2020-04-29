@@ -1,0 +1,11 @@
+
+build
+dist
+.vscode
+.DS_Store
+.cache-loader
+.cache
+.parcel
+*.pyc
+**/*.pyc
+**/__pycache__/
