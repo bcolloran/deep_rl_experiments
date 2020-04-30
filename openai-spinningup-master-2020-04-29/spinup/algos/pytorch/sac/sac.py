@@ -62,6 +62,7 @@ def sac(
     num_test_episodes=10,
     max_ep_len=1000,
     logger_kwargs=dict(),
+    use_logger=True,
     save_freq=1,
 ):
     """
@@ -161,8 +162,9 @@ def sac(
 
     """
 
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())
+    if use_logger:
+        logger = EpochLogger(**logger_kwargs)
+        logger.save_config(locals())
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -190,7 +192,11 @@ def sac(
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
-    logger.log("\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts)
+
+    if use_logger:
+        logger.log(
+            "\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts
+        )
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
@@ -246,8 +252,9 @@ def sac(
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
     q_optimizer = Adam(q_params, lr=lr)
 
-    # Set up model saving
-    logger.setup_pytorch_saver(ac)
+    if use_logger:
+        # Set up model saving
+        logger.setup_pytorch_saver(ac)
 
     def update(data):
         # First run one gradient descent step for Q1 and Q2
@@ -257,7 +264,8 @@ def sac(
         q_optimizer.step()
 
         # Record things
-        logger.store(LossQ=loss_q.item(), **q_info)
+        if use_logger:
+            logger.store(LossQ=loss_q.item(), **q_info)
 
         # Freeze Q-networks so you don't waste computational effort
         # computing gradients for them during the policy learning step.
@@ -275,7 +283,8 @@ def sac(
             p.requires_grad = True
 
         # Record things
-        logger.store(LossPi=loss_pi.item(), **pi_info)
+        if use_logger:
+            logger.store(LossPi=loss_pi.item(), **pi_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -296,11 +305,13 @@ def sac(
                 o, r, d, _ = test_env.step(get_action(o, True))
                 ep_ret += r
                 ep_len += 1
-            logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
+            if use_logger:
+                logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
     start_time = time.time()
+
     o, ep_ret, ep_len = env.reset(), 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
@@ -333,7 +344,8 @@ def sac(
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
-            logger.store(EpRet=ep_ret, EpLen=ep_len)
+            if use_logger:
+                logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
         # Update handling
@@ -347,26 +359,29 @@ def sac(
             epoch = (t + 1) // steps_per_epoch
 
             # Save model
-            if (epoch % save_freq == 0) or (epoch == epochs):
-                logger.save_state({"env": env}, None)
+            if use_logger:
+                if (epoch % save_freq == 0) or (epoch == epochs):
+                    logger.save_state({"env": env}, None)
 
             # Test the performance of the deterministic version of the agent.
             test_agent()
 
             # Log info about epoch
-            logger.log_tabular("Epoch", epoch)
-            logger.log_tabular("EpRet", with_min_and_max=True)
-            logger.log_tabular("TestEpRet", with_min_and_max=True)
-            logger.log_tabular("EpLen", average_only=True)
-            logger.log_tabular("TestEpLen", average_only=True)
-            logger.log_tabular("TotalEnvInteracts", t)
-            logger.log_tabular("Q1Vals", with_min_and_max=True)
-            logger.log_tabular("Q2Vals", with_min_and_max=True)
-            logger.log_tabular("LogPi", with_min_and_max=True)
-            logger.log_tabular("LossPi", average_only=True)
-            logger.log_tabular("LossQ", average_only=True)
-            logger.log_tabular("Time", time.time() - start_time)
-            logger.dump_tabular()
+            if use_logger:
+                logger.log_tabular("Epoch", epoch)
+                logger.log_tabular("EpRet", with_min_and_max=True)
+                logger.log_tabular("TestEpRet", with_min_and_max=True)
+                logger.log_tabular("EpLen", average_only=True)
+                logger.log_tabular("TestEpLen", average_only=True)
+                logger.log_tabular("TotalEnvInteracts", t)
+                logger.log_tabular("Q1Vals", with_min_and_max=True)
+                logger.log_tabular("Q2Vals", with_min_and_max=True)
+                logger.log_tabular("LogPi", with_min_and_max=True)
+                logger.log_tabular("LossPi", average_only=True)
+                logger.log_tabular("LossQ", average_only=True)
+                logger.log_tabular("Time", time.time() - start_time)
+                logger.dump_tabular()
+    return ac
 
 
 if __name__ == "__main__":
@@ -397,4 +412,3 @@ if __name__ == "__main__":
         epochs=args.epochs,
         logger_kwargs=logger_kwargs,
     )
-
