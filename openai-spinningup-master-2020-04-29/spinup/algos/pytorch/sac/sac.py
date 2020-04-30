@@ -8,6 +8,10 @@ import time
 import spinup.algos.pytorch.sac.core as core
 from spinup.utils.logx import EpochLogger
 
+from collections import deque
+import matplotlib.pyplot as plt
+from IPython import display
+
 
 class ReplayBuffer:
     """
@@ -315,6 +319,27 @@ def sac(
     o, ep_ret, ep_len = env.reset(), 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
+
+    f, ax = plt.subplots(figsize=(8, 4))
+    # ax.set_xlim([0, epochs])
+    # plt.show(f)
+
+    rewards = []
+    recent_rewards = deque(maxlen=100)  # last 100 scores
+    avg_recent_rewards = []
+    # line_rewards = ax.plot(rewards, "k")
+    # ax.plot(recent_rewards, "b")
+    episodes_so_far = 0
+
+    def update_plot(episode):
+        # print("rewards", rewards)
+        ax.set_title("episode %s. reward: %s" % (episodes_so_far, rewards[-1]))
+        ax.plot(rewards, "k")
+        ax.plot(avg_recent_rewards, "b")
+        # plt.pause(0.001)
+        display.clear_output(wait=True)
+        display.display(f)
+
     for t in range(total_steps):
 
         # Until start_steps have elapsed, randomly sample actions
@@ -344,8 +369,18 @@ def sac(
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
+            episodes_so_far += 1
+            rewards.append(ep_ret)
+            recent_rewards.append(ep_ret)
+            avg_recent_rewards.append(np.mean(recent_rewards))
+            # print("episodes:", episodes_so_far)
+
+            if len(rewards) > 1:
+                update_plot(episodes_so_far)
+
             if use_logger:
                 logger.store(EpRet=ep_ret, EpLen=ep_len)
+
             o, ep_ret, ep_len = env.reset(), 0, 0
 
         # Update handling
@@ -357,6 +392,7 @@ def sac(
         # End of epoch handling
         if (t + 1) % steps_per_epoch == 0:
             epoch = (t + 1) // steps_per_epoch
+            # print("epoch", epoch)
 
             # Save model
             if use_logger:
