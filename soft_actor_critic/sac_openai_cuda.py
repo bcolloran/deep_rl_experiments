@@ -5,12 +5,35 @@ import torch
 from torch.optim import Adam
 import gym
 import time
+import datetime
 import sac_openai_cuda_nets as core
 from spinup.utils.logx import EpochLogger
 
-from collections import deque
+# from collections import deque
 import matplotlib.pyplot as plt
+
 from IPython import display
+import pickle
+import os
+
+
+def running_mean(x, N):
+    cumsum = np.cumsum(np.insert(x, 0, 0))
+    return (cumsum[N:] - cumsum[:-N]) / float(N)
+
+
+def elapsed_time_string(elapsed_time):
+    if elapsed_time < 60:
+        time_str = f"{elapsed_time:.2f} sec"
+    elif elapsed_time < 60 * 60:
+        time_str = f"{elapsed_time/60:.2f} min"
+    else:
+        time_str = f"{elapsed_time/(60*60):.4f} hr"
+    return time_str
+
+
+def timestamp():
+    return datetime.datetime.now().isoformat().replace(":", "_")
 
 
 class ReplayBuffer:
@@ -53,6 +76,30 @@ class ReplayBuffer:
         }
 
 
+class OUNoise:
+    """Ornstein-Uhlenbeck process."""
+
+    def __init__(self, size, seed, mu=0.0, theta=0.05, sigma=0.2):
+        """Initialize parameters and noise process."""
+        self.mu = mu * np.ones(size)
+        self.size = size
+        self.theta = theta
+        self.sigma = sigma
+        self.seed = np.random.seed(seed)
+        self.reset()
+
+    def reset(self):
+        """Reset the internal state (= noise) to mean (mu)."""
+        self.state = np.copy(self.mu)
+
+    def sample(self):
+        """Update internal state and return it as a noise sample."""
+        x = self.state
+        dx = self.theta * (self.mu - x) + self.sigma * np.random.randn(self.size)
+        self.state = x + dx
+        return self.state
+
+
 def sac(
     env_fn,
     actor_critic=core.MLPActorCritic,
@@ -75,6 +122,10 @@ def sac(
     use_logger=True,
     save_freq=1,
     device="cpu",
+    logger=None,
+    epoch_plot_fn=None,
+    st_plot_fn=None,
+    add_noise=False,
 ):
     """
     Soft Actor-Critic (SAC)
@@ -172,6 +223,27 @@ def sac(
             the current policy and value function.
     """
 
+    run_datetime_str = timestamp()
+    run_params = {
+        "seed": seed,
+        "steps_per_epoch": steps_per_epoch,
+        "epochs": epochs,
+        "replay_size": replay_size,
+        "gamma": gamma,
+        "polyak": polyak,
+        "lr": lr,
+        "alpha": alpha,
+        "batch_size": batch_size,
+        "start_steps": start_steps,
+        "update_after": update_after,
+        "update_every": update_every,
+        "num_test_episodes": num_test_episodes,
+        "max_ep_len": max_ep_len,
+        "use_logger": use_logger,
+        "save_freq": save_freq,
+        "device": device,
+    }
+
     if use_logger:
         logger = EpochLogger(**logger_kwargs)
         logger.save_config(locals())
@@ -207,6 +279,8 @@ def sac(
     # Count variables (protip: try to get a feel for how different size networks behave!)
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
 
+    if add_noise:
+        noise_process = OUNoise(act_dim, seed)
     if use_logger:
         logger.log(
             "\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts
@@ -326,47 +400,141 @@ def sac(
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
+
     start_time = time.time()
 
     o, ep_ret, ep_len = env.reset(), 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
 
-    episode_rewards = []
-    recent_episode_rewards = deque(maxlen=50)  # last 100 scores
-    avg_recent_episode_rewards = []
+    # episode_rewards = []
+    # recent_episode_rewards = deque(maxlen=50)  # last 100 scores
+    # avg_recent_episode_rewards = []
     epoch = 0
-    episodes_so_far = 0
+    episode_num = 0
 
     # step_rewards = []
-    recent_step_rewards = deque(maxlen=1000)  # last 1000 scores
+    # recent_step_rewards = deque(maxlen=1000)  # last 1000 scores
     # avg_recent_step_rewards = []
 
-    f, ax = plt.subplots(figsize=(8, 4))
+    step_log = {
+        "episode num": [],
+        "elapsed time": [],
+        "reward": [],
+        "step time": [],
+        "act time": [],
+        "train time": [],
+        "env time": [],
+        "plot time": [],
+    }
 
-    def update_plot(episode, plot_title):
-        ax.set_title(plot_title)
-        ax.plot(episode_rewards, "k")
-        ax.plot(avg_recent_episode_rewards, "b")
-        display.clear_output(wait=True)
-        display.display(f)
+    episode_log = {
+        "episode num": [],
+        "elapsed time": [],
+        "reward": [],
+        "episode steps": [],
+        "episode done": [],
+    }
 
+    figure, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(8, 8))
+    ax1.set_xlabel("episode")
+    ax1.set_ylabel("reward")
+
+    ax2.set_xlim([0, total_steps])
+    ax2.set_xlabel("step")
+    ax2.set_ylabel("reward")
+
+    ax3.set_xlim([0, total_steps])
+    ax3.set_xlabel("step")
+    ax3.set_ylabel("time")
+    ax3.set_yscale("log")
+
+    # l_step, _ = ax3.plot(step_log["step time"])
+    # l_step.set_label("step")
+    # l_act, _ = ax3.plot(step_log["act time"])
+    # l_act.set_label("act")
+    # l_train, _ = ax3.plot(step_log["train time"])
+    # l_train.set_label("train")
+    # l_env, _ = ax3.plot(step_log["env time"])
+    # l_env.set_label("env")
+
+    first_plot = True
+
+    steps_to_average = 10000
+    episodes_to_average = 100
+
+    def update_plot(first_plot):
+        t = len(step_log["reward"])
+
+        elapsed_time = np.round(time.time() - start_time)
+
+        plot_title = (
+            f"episode {episode_num};  step {t}"
+            f"\nRecent avg step score: {np.mean(step_log['reward'][-steps_to_average:]):.2f}"
+            f"\ntime: {elapsed_time_string(elapsed_time)}"
+            f" {(time.time() - start_time) / t:.4f}s/step)"
+        )
+
+        ax1.set_title(plot_title)
+        ax1.plot(episode_log["reward"], "g")
+        ax1.plot(running_mean(episode_log["reward"], -episodes_to_average), "k")
+
+        ax2.plot(step_log["reward"], "g")
+        ax2.plot(running_mean(step_log["reward"], -steps_to_average), "k")
+
+        # l_step.set_ydata(step_log["step time"])
+        # l_act.set_ydata(step_log["act time"])
+        # l_train.set_ydata(step_log["train time"])
+        # l_env.set_ydata(step_log["env time"])
+
+        (l_step,) = ax3.plot(step_log["step time"], color="k")
+        (l_act,) = ax3.plot(step_log["act time"], color="b")
+        (l_train,) = ax3.plot(step_log["train time"], color="r")
+        (l_env,) = ax3.plot(step_log["env time"], color="g")
+
+        if first_plot:
+            first_plot = False
+            l_step.set_label("step")
+            l_act.set_label("act")
+            l_train.set_label("train")
+            l_env.set_label("env")
+            ax3.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+            # plt.show(block=False)
+
+        if st_plot_fn is not None:
+            st_plot_fn(figure)
+
+        else:
+            display.clear_output(wait=True)
+            display.display(figure)
+        # return first_plot
+
+    add_noise_this_episode = False
     for t in range(total_steps):
+        # print("steps", t)
+        step_start_time = time.perf_counter()
+        episode_start_time = time.perf_counter()
 
         # Until start_steps have elapsed, randomly sample actions
         # from a uniform distribution for better exploration. Afterwards,
         # use the learned policy.
+
+        act_time = time.perf_counter()
         if t > start_steps:
             a = get_action(o)
+            if add_noise_this_episode:
+                a = np.clip(a + noise_process.sample(), -1, 1)
         else:
             a = env.action_space.sample()
+        act_time_this_step = time.perf_counter() - act_time
 
         # Step the env
+        env_time = time.perf_counter()
         o2, r, d, _ = env.step(a)
+        env_time_this_step = time.perf_counter() - env_time
+
         ep_ret += r
         ep_len += 1
-
-        recent_step_rewards.append(r)
 
         # Ignore the "done" signal if it comes from hitting the time
         # horizon (that is, when it's an artificial terminal signal
@@ -382,41 +550,36 @@ def sac(
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
-            episodes_so_far += 1
-            episode_rewards.append(ep_ret)
-            recent_episode_rewards.append(ep_ret)
-            avg_recent_episode_rewards.append(np.mean(recent_episode_rewards))
-            # print("episodes:", episodes_so_far)
-
-            if len(episode_rewards) > 1:
-                elapsed_time = np.round(time.time() - start_time)
-                if elapsed_time < 60:
-                    time_str = f"{elapsed_time:.2f} sec"
-                elif elapsed_time < 60 * 60:
-                    time_str = f"{elapsed_time/60:.2f} min"
-                else:
-                    time_str = f"{elapsed_time/(60*60):.4f} hr"
-
-                plot_title = (
-                    f"episode {episodes_so_far};  step {t}"
-                    f"\nAvg step score: {np.mean(recent_step_rewards):.2f}"
-                    f"\ntime: {time_str}"
-                    f" ({(time.time() - start_time) / episodes_so_far:.2f}s/ep,"
-                    f" {(time.time() - start_time) / t:.4f}s/step)"
-                )
-
-                update_plot(episodes_so_far, plot_title)
-
+            episode_num += 1
             if use_logger:
                 logger.store(EpRet=ep_ret, EpLen=ep_len)
 
+            episode_log["episode num"].append(episode_num)
+            episode_log["elapsed time"].append(time.perf_counter() - episode_start_time)
+            episode_log["reward"].append(ep_ret)
+
+            episode_start_time = time.perf_counter()
             o, ep_ret, ep_len = env.reset(), 0, 0
+            if add_noise and np.random.rand() < 0.02:
+                add_noise_this_episode = True
+            else:
+                add_noise_this_episode = False
 
         # Update handling
+        train_time = time.perf_counter()
         if t >= update_after and t % update_every == 0:
             for j in range(update_every):
                 batch = replay_buffer.sample_batch(batch_size)
                 update(data=batch)
+        train_time_this_step = time.perf_counter() - train_time
+
+        step_log["episode num"].append(episode_num)
+        step_log["elapsed time"].append(time.time() - start_time)
+        step_log["reward"].append(r)
+        step_log["step time"].append(time.perf_counter() - step_start_time)
+        step_log["train time"].append(train_time_this_step)
+        step_log["env time"].append(env_time_this_step)
+        step_log["act time"].append(act_time_this_step)
 
         # End of epoch handling
         if (t + 1) % steps_per_epoch == 0:
@@ -424,24 +587,29 @@ def sac(
 
             elapsed_time = np.round(time.time() - start_time)
 
-            if elapsed_time < 60:
-                time_str = f"{elapsed_time:.2f} seconds"
-            elif elapsed_time < 60 * 60:
-                time_str = f"{elapsed_time/60:.2f} minutes"
-            else:
-                time_str = f"{elapsed_time/(60*60):.2f} hours"
-
             print(
-                f"\rEpoch {epoch}; {episodes_so_far} episodes; {t} steps;"
-                f"\telapsed time: {time_str}"
+                f"\rEpoch {epoch}; {episode_num} episodes; {t} steps;"
+                f"     elapsed time: {elapsed_time_string(elapsed_time)}"
             )
-        #     print(
-        #         f"\rEpoch {epoch}; {episodes_so_far} episodes; {t} steps;"
-        #         f"\nAverage Recent step score: {np.mean(recent_step_rewards)}"
-        #         f"\nelapsed time: {time_str}",
-        #         end="",
-        #     )
 
+            log_path = f"{os.getcwd()}/model_runs/{run_datetime_str}"
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
+            model_filename = f"/model_epoch-{epoch}.pt"
+            log_filename = f"/log.pkl"
+
+            torch.save(ac.state_dict(), log_path + model_filename)
+            with open(log_path + log_filename, "wb") as pickle_file:
+                pickle.dump(
+                    {
+                        "run params": run_params,
+                        "step log": step_log,
+                        "episode log": episode_log,
+                    },
+                    pickle_file,
+                )
+
+            first_plot = update_plot(first_plot)
         #     # Save model
         #     if use_logger:
         #         if (epoch % save_freq == 0) or (epoch == epochs):
@@ -465,7 +633,7 @@ def sac(
         #         logger.log_tabular("LossQ", average_only=True)
         #         logger.log_tabular("Time", time.time() - start_time)
         #         logger.dump_tabular()
-    return ac
+    return ac, step_log, episode_log
 
 
 if __name__ == "__main__":
