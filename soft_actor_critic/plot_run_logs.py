@@ -5,6 +5,11 @@ import statsmodels.api as sm
 lowess = sm.nonparametric.lowess
 
 
+def running_mean(x, N):
+    cumsum = np.cumsum(np.insert(x, 0, 0))
+    return (cumsum[N:] - cumsum[:-N]) / float(N)
+
+
 def elapsed_time_string(elapsed_time):
     if elapsed_time < 60:
         time_str = f"{elapsed_time:.2f} sec"
@@ -28,50 +33,65 @@ def elapsed_time_string(elapsed_time):
 #             moving_aves.append(moving_ave)
 
 
-def plot_run_logs(episode_log, step_log, total_steps=None):
+def plot_run_logs(
+    episode_log, step_log, total_steps=None, post_update_fig_handler=None
+):
     if total_steps is None:
         total_steps = len(step_log["step time"])
-    figure, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(8, 8))
-    ax1.set_xlabel("episode")
-    ax1.set_ylabel("reward")
+    (
+        figure,
+        (ax_reward_vs_episode, ax_steps_vs_episode, ax_reward_vs_step, ax_time_vs_step),
+    ) = plt.subplots(nrows=4, ncols=1, figsize=(8, 8))
+    ax_reward_vs_episode.set_xlabel("episode")
+    ax_reward_vs_episode.set_ylabel("reward")
 
-    ax2.set_xlim([0, total_steps])
-    ax2.set_xlabel("step")
-    ax2.set_ylabel("reward")
+    ax_steps_vs_episode.set_xlabel("episode")
+    ax_steps_vs_episode.set_ylabel("steps")
 
-    ax3.set_xlim([0, total_steps])
-    ax3.set_xlabel("step")
-    ax3.set_ylabel("time")
-    ax3.set_yscale("log")
+    ax_reward_vs_step.set_xlim([0, total_steps])
+    ax_reward_vs_step.set_xlabel("step")
+    ax_reward_vs_step.set_ylabel("reward")
 
-    # l_step, _ = ax3.plot(step_log["step time"])
-    # l_step.set_label("step")
-    # l_act, _ = ax3.plot(step_log["act time"])
-    # l_act.set_label("act")
-    # l_train, _ = ax3.plot(step_log["train time"])
-    # l_train.set_label("train")
-    # l_env, _ = ax3.plot(step_log["env time"])
-    # l_env.set_label("env")
-    first_plot = True
+    ax_time_vs_step.set_xlim([0, total_steps])
+    ax_time_vs_step.set_xlabel("step")
+    ax_time_vs_step.set_ylabel("time")
+    ax_time_vs_step.set_yscale("log")
 
-    def update_plot(first_plot, elapsed_time=None):
+    (l_step,) = ax_time_vs_step.plot([], [], ".", color="k")
+    l_step.set_label("step")
+    (l_act,) = ax_time_vs_step.plot([], [], ".", color="b")
+    l_act.set_label("act")
+    (l_train,) = ax_time_vs_step.plot([], [], ".", color="g")
+    l_train.set_label("train")
+    (l_env,) = ax_time_vs_step.plot([], [], ".", color="r")
+    l_env.set_label("env")
+
+    l_step.set_label("step")
+    l_act.set_label("act")
+    l_train.set_label("train")
+    l_env.set_label("env")
+    ax_time_vs_step.legend(
+        bbox_to_anchor=(1.04, 1), loc="upper left", borderaxespad=0.0
+    )
+    plt.tight_layout()
+
+    def update_plot():
         num_steps = len(step_log["reward"])
 
-        if elapsed_time is None:
-            elapsed_time = step_log["elapsed time"][-1]
+        elapsed_time = step_log["elapsed time"][-1]
 
         episode_num = len(episode_log["episode num"])
 
         plot_title = (
             f"episode {episode_num};  step {num_steps}"
-            f"\last 100 avg episode score: {np.mean(episode_log['reward'][-100:]):.2f}"
+            f"\nlast 100 avg episode score: {np.mean(episode_log['reward'][-100:]):.2f}"
             f"\ntime: {elapsed_time_string(elapsed_time)}"
             f" {elapsed_time / num_steps:.4f}s/step)"
         )
 
-        ax1.set_title(plot_title)
-        ax1.plot(episode_log["reward"], "g")
-        # ax1.plot(
+        ax_reward_vs_episode.set_title(plot_title)
+        ax_reward_vs_episode.plot(episode_log["reward"], "k")
+        # ax_reward_vs_episode.plot(
         #     lowess(
         #         episode_log["reward"],
         #         episode_log["episode num"],
@@ -81,8 +101,12 @@ def plot_run_logs(episode_log, step_log, total_steps=None):
         #     "k",
         # )
 
-        ax2.plot(step_log["reward"], "g")
-        # ax2.plot(
+        ax_steps_vs_episode.plot(
+            episode_log["episode num"], episode_log["episode steps"], "k"
+        )
+
+        ax_reward_vs_step.plot(step_log["reward"], "k")
+        # ax_reward_vs_step.plot(
         #     lowess(
         #         step_log["reward"],
         #         list(range(num_steps)),
@@ -92,23 +116,14 @@ def plot_run_logs(episode_log, step_log, total_steps=None):
         #     "k",
         # )
 
-        # l_step.set_ydata(step_log["step time"])
-        # l_act.set_ydata(step_log["act time"])
-        # l_train.set_ydata(step_log["train time"])
-        # l_env.set_ydata(step_log["env time"])
+        x = np.arange(num_steps)
+        l_step.set_data(x, step_log["step time"])
+        l_act.set_data(x, step_log["act time"])
+        l_train.set_data(x, step_log["train time"])
+        l_env.set_data(x, step_log["env time"])
 
-        (l_step,) = ax3.plot(step_log["step time"], ".", color="k")
-        (l_act,) = ax3.plot(step_log["act time"], ".", color="b")
-        (l_train,) = ax3.plot(step_log["train time"], ".", color="r")
-        (l_env,) = ax3.plot(step_log["env time"], ".", color="g")
-
-        if first_plot:
-            first_plot = False
-            l_step.set_label("step")
-            l_act.set_label("act")
-            l_train.set_label("train")
-            l_env.set_label("env")
-            ax3.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+        if post_update_fig_handler is not None:
+            post_update_fig_handler(figure)
 
         return figure
 

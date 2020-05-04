@@ -10,26 +10,13 @@ import sac_openai_cuda_nets as core
 from spinup.utils.logx import EpochLogger
 
 # from collections import deque
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
-from IPython import display
+# from IPython import display
 import pickle
 import os
 
-
-def running_mean(x, N):
-    cumsum = np.cumsum(np.insert(x, 0, 0))
-    return (cumsum[N:] - cumsum[:-N]) / float(N)
-
-
-def elapsed_time_string(elapsed_time):
-    if elapsed_time < 60:
-        time_str = f"{elapsed_time:.2f} sec"
-    elif elapsed_time < 60 * 60:
-        time_str = f"{elapsed_time/60:.2f} min"
-    else:
-        time_str = f"{elapsed_time/(60*60):.4f} hr"
-    return time_str
+from plot_run_logs import plot_run_logs, elapsed_time_string
 
 
 def timestamp():
@@ -79,7 +66,7 @@ class ReplayBuffer:
 class OUNoise:
     """Ornstein-Uhlenbeck process."""
 
-    def __init__(self, size, seed, mu=0.0, theta=0.05, sigma=0.2):
+    def __init__(self, size, seed, mu=0.0, theta=0.01, sigma=0.05):
         """Initialize parameters and noise process."""
         self.mu = mu * np.ones(size)
         self.size = size
@@ -102,6 +89,7 @@ class OUNoise:
 
 def sac(
     env_fn,
+    env_name="unknownEnv",
     actor_critic=core.MLPActorCritic,
     ac_kwargs=dict(),
     seed=0,
@@ -123,8 +111,7 @@ def sac(
     save_freq=1,
     device="cpu",
     logger=None,
-    epoch_plot_fn=None,
-    st_plot_fn=None,
+    epoch_plot_fig_handler=None,
     add_noise=False,
 ):
     """
@@ -242,6 +229,7 @@ def sac(
         "use_logger": use_logger,
         "save_freq": save_freq,
         "device": device,
+        "add_noise": add_noise,
     }
 
     if use_logger:
@@ -407,15 +395,8 @@ def sac(
 
     # Main loop: collect experience in env and update/log each epoch
 
-    # episode_rewards = []
-    # recent_episode_rewards = deque(maxlen=50)  # last 100 scores
-    # avg_recent_episode_rewards = []
     epoch = 0
     episode_num = 0
-
-    # step_rewards = []
-    # recent_step_rewards = deque(maxlen=1000)  # last 1000 scores
-    # avg_recent_step_rewards = []
 
     step_log = {
         "episode num": [],
@@ -436,80 +417,87 @@ def sac(
         "episode done": [],
     }
 
-    figure, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(8, 8))
-    ax1.set_xlabel("episode")
-    ax1.set_ylabel("reward")
+    _, update_plot = plot_run_logs(
+        episode_log,
+        step_log,
+        total_steps=total_steps,
+        post_update_fig_handler=epoch_plot_fig_handler,
+    )
 
-    ax2.set_xlim([0, total_steps])
-    ax2.set_xlabel("step")
-    ax2.set_ylabel("reward")
+    # figure, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(8, 8))
+    # ax1.set_xlabel("episode")
+    # ax1.set_ylabel("reward")
 
-    ax3.set_xlim([0, total_steps])
-    ax3.set_xlabel("step")
-    ax3.set_ylabel("time")
-    ax3.set_yscale("log")
+    # ax2.set_xlim([0, total_steps])
+    # ax2.set_xlabel("step")
+    # ax2.set_ylabel("reward")
 
-    # l_step, _ = ax3.plot(step_log["step time"])
-    # l_step.set_label("step")
-    # l_act, _ = ax3.plot(step_log["act time"])
-    # l_act.set_label("act")
-    # l_train, _ = ax3.plot(step_log["train time"])
-    # l_train.set_label("train")
-    # l_env, _ = ax3.plot(step_log["env time"])
-    # l_env.set_label("env")
+    # ax3.set_xlim([0, total_steps])
+    # ax3.set_xlabel("step")
+    # ax3.set_ylabel("time")
+    # ax3.set_yscale("log")
 
-    first_plot = True
+    # # l_step, _ = ax3.plot(step_log["step time"])
+    # # l_step.set_label("step")
+    # # l_act, _ = ax3.plot(step_log["act time"])
+    # # l_act.set_label("act")
+    # # l_train, _ = ax3.plot(step_log["train time"])
+    # # l_train.set_label("train")
+    # # l_env, _ = ax3.plot(step_log["env time"])
+    # # l_env.set_label("env")
 
-    steps_to_average = 10000
-    episodes_to_average = 100
+    # first_plot = True
 
-    def update_plot(first_plot):
-        t = len(step_log["reward"])
+    # steps_to_average = 10000
+    # episodes_to_average = 100
 
-        elapsed_time = np.round(time.time() - start_time)
+    # def update_plot(first_plot):
+    #     t = len(step_log["reward"])
 
-        plot_title = (
-            f"episode {episode_num};  step {t}"
-            f"\nRecent avg step score: {np.mean(step_log['reward'][-steps_to_average:]):.2f}"
-            f"\ntime: {elapsed_time_string(elapsed_time)}"
-            f" {(time.time() - start_time) / t:.4f}s/step)"
-        )
+    #     elapsed_time = np.round(time.time() - start_time)
 
-        ax1.set_title(plot_title)
-        ax1.plot(episode_log["reward"], "g")
-        ax1.plot(running_mean(episode_log["reward"], -episodes_to_average), "k")
+    #     plot_title = (
+    #         f"episode {episode_num};  step {t}"
+    #         f"\nRecent avg step score: {np.mean(step_log['reward'][-steps_to_average:]):.2f}"
+    #         f"\ntime: {elapsed_time_string(elapsed_time)}"
+    #         f" {(time.time() - start_time) / t:.4f}s/step)"
+    #     )
 
-        ax2.plot(step_log["reward"], "g")
-        ax2.plot(running_mean(step_log["reward"], -steps_to_average), "k")
+    #     ax1.set_title(plot_title)
+    #     ax1.plot(episode_log["reward"], "g")
+    #     ax1.plot(running_mean(episode_log["reward"], -episodes_to_average), "k")
 
-        # l_step.set_ydata(step_log["step time"])
-        # l_act.set_ydata(step_log["act time"])
-        # l_train.set_ydata(step_log["train time"])
-        # l_env.set_ydata(step_log["env time"])
+    #     ax2.plot(step_log["reward"], "g")
+    #     ax2.plot(running_mean(step_log["reward"], -steps_to_average), "k")
 
-        (l_step,) = ax3.plot(step_log["step time"], color="k")
-        (l_act,) = ax3.plot(step_log["act time"], color="b")
-        (l_train,) = ax3.plot(step_log["train time"], color="r")
-        (l_env,) = ax3.plot(step_log["env time"], color="g")
+    #     # l_step.set_ydata(step_log["step time"])
+    #     # l_act.set_ydata(step_log["act time"])
+    #     # l_train.set_ydata(step_log["train time"])
+    #     # l_env.set_ydata(step_log["env time"])
 
-        if first_plot:
-            first_plot = False
-            l_step.set_label("step")
-            l_act.set_label("act")
-            l_train.set_label("train")
-            l_env.set_label("env")
-            ax3.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-            # plt.show(block=False)
+    #     (l_step,) = ax3.plot(step_log["step time"], color="k")
+    #     (l_act,) = ax3.plot(step_log["act time"], color="b")
+    #     (l_train,) = ax3.plot(step_log["train time"], color="r")
+    #     (l_env,) = ax3.plot(step_log["env time"], color="g")
 
-        if st_plot_fn is not None:
-            st_plot_fn(figure)
+    #     if first_plot:
+    #         first_plot = False
+    #         l_step.set_label("step")
+    #         l_act.set_label("act")
+    #         l_train.set_label("train")
+    #         l_env.set_label("env")
+    #         ax3.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    #         # plt.show(block=False)
 
-        else:
-            display.clear_output(wait=True)
-            display.display(figure)
-        # return first_plot
+    #     if st_plot_fn is not None:
+    #         st_plot_fn(figure)
 
-    add_noise_this_episode = False
+    #     else:
+    #         display.clear_output(wait=True)
+    #         display.display(figure)
+    #     # return first_plot
+
+    start_noise_this_episode = False
     for t in range(total_steps):
         # print("steps", t)
         step_start_time = time.perf_counter()
@@ -519,10 +507,13 @@ def sac(
         # from a uniform distribution for better exploration. Afterwards,
         # use the learned policy.
 
+        if add_noise and np.random.rand() < 0.02:
+            start_noise_this_episode = True
+
         act_time = time.perf_counter()
         if t > start_steps:
             a = get_action(o)
-            if add_noise_this_episode:
+            if start_noise_this_episode:
                 a = np.clip(a + noise_process.sample(), -1, 1)
         else:
             a = env.action_space.sample()
@@ -556,14 +547,13 @@ def sac(
 
             episode_log["episode num"].append(episode_num)
             episode_log["elapsed time"].append(time.perf_counter() - episode_start_time)
+            episode_log["episode steps"].append(ep_len)
             episode_log["reward"].append(ep_ret)
 
             episode_start_time = time.perf_counter()
             o, ep_ret, ep_len = env.reset(), 0, 0
-            if add_noise and np.random.rand() < 0.02:
-                add_noise_this_episode = True
-            else:
-                add_noise_this_episode = False
+            # if
+            start_noise_this_episode = False
 
         # Update handling
         train_time = time.perf_counter()
@@ -592,7 +582,7 @@ def sac(
                 f"     elapsed time: {elapsed_time_string(elapsed_time)}"
             )
 
-            log_path = f"{os.getcwd()}/model_runs/{run_datetime_str}"
+            log_path = f"{os.getcwd()}/model_runs/{env_name}/{run_datetime_str}"
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
             model_filename = f"/model_epoch-{epoch}.pt"
@@ -609,7 +599,7 @@ def sac(
                     pickle_file,
                 )
 
-            first_plot = update_plot(first_plot)
+            first_plot = update_plot()
         #     # Save model
         #     if use_logger:
         #         if (epoch % save_freq == 0) or (epoch == epochs):
