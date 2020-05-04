@@ -30,7 +30,7 @@ max_dist_per_turn = 4
 max_yaw_per_turn = (1 / 2) * pi
 
 actionSpaceBounds = np.array(
-    [[min_dist_per_turn, max_dist_per_turn], [-max_yaw_per_turn, max_yaw_per_turn],]
+    [[min_dist_per_turn, max_dist_per_turn], [-max_yaw_per_turn, max_yaw_per_turn]]
 )
 
 deg = pi * 1 / 180
@@ -53,9 +53,11 @@ kill_bonus = 10
 
 def randomActions(N):
     # (distance, yaw)
-    return (
-        min_dist_per_turn + rand(N) * (max_dist_per_turn - min_dist_per_turn),
-        (rand(N) - 0.5) * 2 * max_yaw_per_turn,
+    return np.vstack(
+        [
+            min_dist_per_turn + rand(N) * (max_dist_per_turn - min_dist_per_turn),
+            (rand(N) - 0.5) * 2 * max_yaw_per_turn,
+        ]
     )
 
 
@@ -67,7 +69,9 @@ def smallestAngle(a, b):
 
 
 @jit(nopython=True)
-def envStep(pos, heading, action_dist, action_yaw):
+def envStep(pos, heading, actions):
+    action_dist = actions[0, :]
+    action_yaw = actions[1, :]
     # # no edge handling
     # heading_next = np.mod(action_yaw / steps_per_turn + heading, _2pi)
 
@@ -158,7 +162,6 @@ def doTurn(game_state, actions):
     # game_state: : tuple of (position array, heading array)
     # actions: tuple of (distances array , yaw change array)
     pos_next, heading_next, health_next = game_state
-    action_dist, action_yaw = actions
     N = pos_next.shape[1]
 
     # init containers
@@ -171,9 +174,7 @@ def doTurn(game_state, actions):
     reward = np.zeros((N, 1))
 
     for t in range(0, steps_per_turn):
-        pos_next, heading_next = envStep(
-            pos_next, heading_next, action_dist, action_yaw
-        )
+        pos_next, heading_next = envStep(pos_next, heading_next, actions)
         hits_next, health_next = checkHits(pos_next, heading_next, health_next, reward)
 
         positions[:, :, t] = pos_next
@@ -185,11 +186,14 @@ def doTurn(game_state, actions):
 
 
 @njit
-def rescaleVectorElts(x, A, B):
-    # rescale elts in vector x, which are in intervals given
+def rescaleColumns(X, A, B):
+    # rescale the columns of X, in which the column vectors
+    # should have values in intervals given
     # by the rows of A, to the proportional values
     # in interval given by rows of B
-    return (x - A[:, 0]) / (A[:, 1] - A[:, 0]) * (B[:, 1] - B[:, 0]) + B[:, 0]
+    A_0col = A[:, 0:1]
+    B_0col = B[:, 0:1]
+    return (X - A_0col) / (A[:, 1:2] - A_0col) * (B[:, 1:2] - B_0col) + B_0col
 
 
 class GameEnv:
@@ -213,60 +217,79 @@ class GameEnv:
         self.rewards = zeros((N_agents, 0))
         self.turnsSoFar = 0
 
-    def pickNextActions(self):
+    def pickDefaultActions(self):
         N = self.N_agents
         if self.enemy_type == "random":
             return randomActions(N)
         if self.enemy_type == "stationary":
-            return np.zeros(N), np.zeros(N)
+            return np.vstack([np.zeros(N), np.zeros(N)])
         if self.enemy_type == "straight":
-            return ones(N), np.zeros(N)
+            return np.vstack([ones(N), np.zeros(N)])
         print("WARNING -- unknown enemy type given:", self.enemy_type)
         return randomActions(N)
 
-    def getAgent0RewardsForActions(self, actions):
+    # def getAgent0RewardsForActions(self, actions):
+    #     return self.getAgentRewardsForActions(0, actions)
+
+    def getAgentRewardsForActions(self, agent, action_options, all_actions):
         rewards = []
-        for agent_0_action in actions:
-            _, _, _, _, reward = self.act(agent_0_action)
-            rewards.append(reward[0, 0])
+        for agent_action in action_options:
+            all_actions[:, agent] = agent_action
+            _, _, _, _, reward = self.act(all_actions)
+            rewards.append(reward[agent, 0])
         return np.array(rewards)
 
-    def pickBestAgent0RewardsForActions(self, actions):
-        rewards = self.getAgent0RewardsForActions(actions)
+    def pickBestAgentRewardsForActions(self, agent, action_options, all_actions):
+        rewards = self.getAgentRewardsForActions(agent, action_options, all_actions)
         i = np.argmax(rewards)
-        bestAction = actions[i]
+        bestAction = action_options[i]
         # if no action produces >0 reward, choose from among
-        # actions that produce 0 reward
+        # action_options that produce 0 reward
         if rewards[i] == 0:
-            zeroActions = [a for j, a in enumerate(actions) if rewards[i] == 0]
+            zeroActions = [a for j, a in enumerate(action_options) if rewards[i] == 0]
             bestAction = sample(zeroActions, 1)[0]
         return bestAction, rewards[i]
 
-    def act(self, agent_0_action):
+    # def pickBestAgent0RewardsForActions(self, action_options, actions):
+    #     rewards = self.getAgent0RewardsForActions(actions)
+    #     i = np.argmax(rewards)
+    #     bestAction = actions[i]
+    #     # if no action produces >0 reward, choose from among
+    #     # actions that produce 0 reward
+    #     if rewards[i] == 0:
+    #         zeroActions = [a for j, a in enumerate(actions) if rewards[i] == 0]
+    #         bestAction = sample(zeroActions, 1)[0]
+    #     return bestAction, rewards[i]
+
+    def act(self, actions):
         """
         agent_0_action elements are always in [-1,1],
         and need to be rescaled for the game
         """
-        distance, yaw = self.pickNextActions()
+        # distance, yaw = self.pickDefaultActions()
 
-        scaledAction = rescaleVectorElts(
-            np.array(agent_0_action),
-            np.array([[-1, 1], [-1, 1]]),
-            self.getActionSpaceBounds(),
+        # scaledAction = rescaleColumns(
+        #     np.array(np.array([distance, yaw])),
+        #     np.array([[-1, 1], [-1, 1]]),
+        #     self.getActionSpaceBounds(),
+        # )
+
+        # distance = scaledAction[0, :]
+        # yaw = scaledAction[1, :]
+
+        scaledAction = rescaleColumns(
+            actions, np.array([[-1, 1], [-1, 1]]), self.getActionSpaceBounds(),
         )
 
-        distance[0] = scaledAction[0]
-        yaw[0] = scaledAction[1]
+        return doTurn(self.getLatestTurnEndStateTup(), scaledAction)
 
-        return doTurn(self.getLatestTurnEndStateTup(), (distance, yaw))
-
-    def step(self, agent_0_action):
+    def step(self, actions):
         """
         agent_0_action elements are always in [-1,1],
         and need to be rescaled for the game
         """
 
-        positions, headings, health, hits, reward = self.act(agent_0_action)
+        positions, headings, health, hits, reward = self.act(actions)
 
         self.latestPositions = positions[:, :, -1]
         self.latestHeadings = headings[:, -1]

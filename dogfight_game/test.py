@@ -8,7 +8,7 @@ import streamlit as st
 from game_model import GameEnv
 from plot_game_data import plotGameData
 
-np.random.seed(123)
+np.random.seed(124)
 
 randn = np.random.randn
 rand = np.random.rand
@@ -19,31 +19,40 @@ print("\n\n\n\n\n++++++++++++++++++++NEW RUN++++++++++++++")
 
 # start = time.time()
 # initial_state = intitialState()
-# positions, headings, health, hits, reward = doTurn(initial_state, randomActions(initial_state[0].shape[1]))
+# positions, headings, health, hits, reward = doTurn(
+# initial_state, randomActions(initial_state[0].shape[1]))
 # end = time.time()
 # print("Elapsed = %s" % (end - start))
 
 # start = time.time()
 # initial_state = intitialState()
-# positions, headings, health, hits, reward = doTurn(initial_state, randomActions(initial_state[0].shape[1]))
+# positions, headings, health, hits, reward = doTurn(
+# initial_state, randomActions(initial_state[0].shape[1]))
 # end = time.time()
 # print("Elapsed 2nd run = %s" % (end - start))
 
-x = np.linspace(-1,1,5)
-y = np.linspace(-1,1,5)
+x = np.linspace(-1, 1, 5)
+y = np.linspace(-1, 1, 5)
 X, Y = np.meshgrid(x, y)
-actionsSample = list(zip(X.ravel(),Y.ravel()))
+action_options = list(zip(X.ravel(), Y.ravel()))
 
+N_agents = 5
 
 start = time.time()
-env = GameEnv(N_agents=99, enemy_type="straight")
-for i in range(300):
+env = GameEnv(N_agents=N_agents, enemy_type="straight")
+for i in range(100):
     # action = (rand(2)*2)-1
-    action, bestReward = env.pickBestAgent0RewardsForActions(actionsSample)
+    
     # if bestReward == 0.0:
     #     action = (rand(2)*2)-1
+    actions = env.pickDefaultActions()
+    action, bestReward = env.pickBestAgentRewardsForActions(0, action_options, actions)
+    # distance, yaw = agent_action[0], agent_action[1]
+    print(action)
+    actions[:, 0] = action
+    print(actions)
 
-    next_state, reward, done, _ = env.step(np.array(action))
+    next_state, reward, done, _ = env.step(np.array(actions))
     if i == 0:
         print("time to complete first step (jit): %s" % (time.time() - start))
     if done:
@@ -64,5 +73,4 @@ st.pyplot(plotGameData(positions, hits, health, env.getDeathTimes()))
 print("time to draw plot: %s" % (time.time() - start))
 
 st.write(f"enemies still alive: {np.isnan(env.getDeathTimes()).sum()}")
-st.line_chart(env.rewards[0,:])
-
+st.line_chart(env.rewards[0, :])
