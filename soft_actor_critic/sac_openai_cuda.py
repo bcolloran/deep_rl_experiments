@@ -7,7 +7,6 @@ import gym
 import time
 import datetime
 import sac_openai_cuda_nets as core
-from spinup.utils.logx import EpochLogger
 
 # from collections import deque
 # import matplotlib.pyplot as plt
@@ -106,11 +105,8 @@ def sac(
     update_every=50,
     num_test_episodes=10,
     max_ep_len=1000,
-    logger_kwargs=dict(),
-    use_logger=True,
     save_freq=1,
     device="cpu",
-    logger=None,
     epoch_plot_fig_handler=None,
     add_noise=False,
 ):
@@ -204,8 +200,6 @@ def sac(
 
         max_ep_len (int): Maximum length of trajectory / episode / rollout.
 
-        logger_kwargs (dict): Keyword args for EpochLogger.
-
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
     """
@@ -226,15 +220,10 @@ def sac(
         "update_every": update_every,
         "num_test_episodes": num_test_episodes,
         "max_ep_len": max_ep_len,
-        "use_logger": use_logger,
         "save_freq": save_freq,
         "device": device,
         "add_noise": add_noise,
     }
-
-    if use_logger:
-        logger = EpochLogger(**logger_kwargs)
-        logger.save_config(locals())
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -242,9 +231,6 @@ def sac(
     env, test_env = env_fn(), env_fn()
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
-
-    # Action limit for clamping: critically, assumes all dimensions share the same bound!
-    act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
@@ -265,14 +251,10 @@ def sac(
     )
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
+    # var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
 
     if add_noise:
         noise_process = OUNoise(act_dim, seed)
-    if use_logger:
-        logger.log(
-            "\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts
-        )
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
@@ -330,10 +312,6 @@ def sac(
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
     q_optimizer = Adam(q_params, lr=lr)
 
-    if use_logger:
-        # Set up model saving
-        logger.setup_pytorch_saver(ac)
-
     def update(data):
         # First run one gradient descent step for Q1 and Q2
         q_optimizer.zero_grad()
@@ -342,8 +320,6 @@ def sac(
         q_optimizer.step()
 
         # Record things
-        if use_logger:
-            logger.store(LossQ=loss_q.item(), **q_info)
 
         # Freeze Q-networks so you don't waste computational effort
         # computing gradients for them during the policy learning step.
@@ -359,10 +335,6 @@ def sac(
         # Unfreeze Q-networks so you can optimize it at next DDPG step.
         for p in q_params:
             p.requires_grad = True
-
-        # Record things
-        if use_logger:
-            logger.store(LossPi=loss_pi.item(), **pi_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -383,8 +355,6 @@ def sac(
                 o, r, d, _ = test_env.step(get_action(o, True))
                 ep_ret += r
                 ep_len += 1
-            if use_logger:
-                logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
@@ -469,8 +439,6 @@ def sac(
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
             episode_num += 1
-            if use_logger:
-                logger.store(EpRet=ep_ret, EpLen=ep_len)
 
             episode_log["episode num"].append(episode_num)
             episode_log["elapsed time"].append(time.perf_counter() - episode_start_time)
@@ -527,29 +495,6 @@ def sac(
                 )
 
             first_plot = update_plot()
-        #     # Save model
-        #     if use_logger:
-        #         if (epoch % save_freq == 0) or (epoch == epochs):
-        #             logger.save_state({"env": env}, None)
-
-        #     # Test the performance of the deterministic version of the agent.
-        #     test_agent()
-
-        #     # Log info about epoch
-        #     if use_logger:
-        #         logger.log_tabular("Epoch", epoch)
-        #         logger.log_tabular("EpRet", with_min_and_max=True)
-        #         logger.log_tabular("TestEpRet", with_min_and_max=True)
-        #         logger.log_tabular("EpLen", average_only=True)
-        #         logger.log_tabular("TestEpLen", average_only=True)
-        #         logger.log_tabular("TotalEnvInteracts", t)
-        #         logger.log_tabular("Q1Vals", with_min_and_max=True)
-        #         logger.log_tabular("Q2Vals", with_min_and_max=True)
-        #         logger.log_tabular("LogPi", with_min_and_max=True)
-        #         logger.log_tabular("LossPi", average_only=True)
-        #         logger.log_tabular("LossQ", average_only=True)
-        #         logger.log_tabular("Time", time.time() - start_time)
-        #         logger.dump_tabular()
     return ac, step_log, episode_log
 
 
@@ -566,10 +511,6 @@ if __name__ == "__main__":
     parser.add_argument("--exp_name", type=str, default="sac")
     args = parser.parse_args()
 
-    from spinup.utils.run_utils import setup_logger_kwargs
-
-    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
-
     torch.set_num_threads(torch.get_num_threads())
 
     sac(
@@ -579,5 +520,4 @@ if __name__ == "__main__":
         gamma=args.gamma,
         seed=args.seed,
         epochs=args.epochs,
-        logger_kwargs=logger_kwargs,
     )
