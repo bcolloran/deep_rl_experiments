@@ -258,7 +258,7 @@ def sac(
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
-        o, a, r, o2, d = (
+        o, a, reward, o2, d = (
             data["obs"],
             data["act"],
             data["rew"],
@@ -278,7 +278,7 @@ def sac(
             q1_pi_targ = ac_targ.q1(o2, a2)
             q2_pi_targ = ac_targ.q2(o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
+            backup = reward + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
 
         # MSE loss against Bellman backup
         loss_q1 = ((q1 - backup) ** 2).mean()
@@ -494,7 +494,7 @@ def sac(
                     pickle_file,
                 )
 
-            first_plot = update_plot()
+            update_plot()
     return ac, step_log, episode_log
 
 

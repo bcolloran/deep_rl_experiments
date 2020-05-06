@@ -57,7 +57,6 @@ if train_fresh_model:
         start_steps=start_steps,
         steps_per_epoch=steps_per_epoch,
         epochs=epochs,
-        use_logger=False,
         update_every=5,
         # alpha=.5,
         batch_size=128,
