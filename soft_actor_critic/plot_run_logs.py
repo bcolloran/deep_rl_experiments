@@ -1,8 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import statsmodels.api as sm
-
-lowess = sm.nonparametric.lowess
 
 
 def running_mean(x, N):
@@ -91,30 +88,12 @@ def plot_run_logs(
 
         ax_reward_vs_episode.set_title(plot_title)
         ax_reward_vs_episode.plot(episode_log["reward"], "k")
-        # ax_reward_vs_episode.plot(
-        #     lowess(
-        #         episode_log["reward"],
-        #         episode_log["episode num"],
-        #         frac=0.1,
-        #         return_sorted=False,
-        #     ),
-        #     "k",
-        # )
 
         ax_steps_vs_episode.plot(
             episode_log["episode num"], episode_log["episode steps"], "k"
         )
 
         ax_reward_vs_step.plot(step_log["reward"], "k")
-        # ax_reward_vs_step.plot(
-        #     lowess(
-        #         step_log["reward"],
-        #         list(range(num_steps)),
-        #         frac=0.1,
-        #         return_sorted=False,
-        #     ),
-        #     "k",
-        # )
 
         x = np.arange(num_steps)
         l_step.set_data(x, step_log["step time"])
