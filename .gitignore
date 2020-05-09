@@ -12,3 +12,4 @@ dist
 *.pkl
 *.pt
 *.npz
+**/model_runs/
