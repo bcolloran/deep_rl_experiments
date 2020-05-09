@@ -31,7 +31,10 @@ def augmentedRandomSearch(
     max_steps_per_episode=3000,
     std_dev_exploration_noise=0.03,  # nu
     current_weights=None,
-    seed=19,
+    observed_state_mean=None,
+    observed_state_std=None,
+    welford_var_agg=None,
+    seed=20,
     min_normalization_std=0.1,
 ):
     np.random.seed(seed)
@@ -41,9 +44,13 @@ def augmentedRandomSearch(
         "episodes_per_epoch": episodes_per_epoch,
         "epochs": epochs,
         "lr": lr,
-        "epoch_plot_fig_handler": epoch_plot_fig_handler,
         "max_steps_per_episode": max_steps_per_episode,
         "std_dev_exploration_noise": std_dev_exploration_noise,
+        "current_weights": current_weights,
+        "observed_state_mean=": observed_state_mean,
+        "observed_state_std": observed_state_std,
+        "seed": seed,
+        "min_normalization_std": min_normalization_std,
     }
 
     start_time = time.time()
@@ -55,9 +62,17 @@ def augmentedRandomSearch(
     action_dim = env.action_space.shape[0]
 
     if current_weights is None:
-        # current_weights = np.random.randn(action_dim, state_dim)
         current_weights = np.zeros([action_dim, state_dim])
-    # print("current_weights", current_weights)
+    if observed_state_mean is None:
+        observed_state_mean = np.zeros((state_dim, 1))
+    if observed_state_std is None:
+        observed_state_std = np.ones((state_dim, 1))
+
+    if welford_var_agg is None:
+        # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford%27s_online_algorithm
+        welford_var_agg = np.ones((state_dim, 1))
+
+    num_states_observed = 0
 
     episode_log = {
         "episode num": [],
@@ -68,22 +83,6 @@ def augmentedRandomSearch(
         "episode steps": [],
         "episode done": [],
     }
-
-    # num_rewards_observed = 0
-    # observed_reward_mean = 0
-    # observed_reward_std = 0
-
-    num_states_observed = 0
-    observed_state_mean = np.zeros((state_dim, 1))
-    observed_state_std = np.ones((state_dim, 1))
-
-    # observed_state_mean = np.zeros(state_dim)
-    # observed_state_std = np.ones(state_dim)
-    # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford%27s_online_algorithm
-    welford_var_agg = np.ones((state_dim, 1))
-    # welford_var_agg = np.ones(state_dim)
-
-    # def update_mean_and_std(obs)
 
     _, update_plot = plot_episode_logs(
         episode_log, post_update_fig_handler=epoch_plot_fig_handler,
@@ -214,9 +213,16 @@ def augmentedRandomSearch(
                     {"run params": run_params, "episode log": episode_log}, params_file,
                 )
 
-            model_filename = f"/model_epoch-{epoch}.npy"
+            epoch_str = str(epoch).zfill(len(str(epochs)) + 1)
+            model_filename = f"/model_epoch-{epoch_str}.npy"
             with open(log_path + model_filename, "wb") as model_file:
-                np.save(model_file, current_weights)
+                np.savez(
+                    model_file,
+                    weights=current_weights,
+                    observed_state_mean=observed_state_mean,
+                    observed_state_std=observed_state_std,
+                    welford_var_agg=welford_var_agg,
+                )
 
             update_plot()
 
