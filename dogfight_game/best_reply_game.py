@@ -5,8 +5,10 @@ import time
 import streamlit as st
 
 # from game_model import doTurn, randomActions, intitialState, GameEnv
-from game_model import GameEnv
-from plot_game_data import plotGameData
+# from game_model import GameEnv
+# from plot_game_data import plotGameData
+
+from dogfight_game import GameEnv, plotGameData
 
 np.random.seed(123456)
 
