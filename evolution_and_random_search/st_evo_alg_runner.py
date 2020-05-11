@@ -6,15 +6,19 @@ import os
 import pickle
 
 from ARS_bc import augmentedRandomSearch
+from ARS_hidden_layer import augmentedRandomSearch_hiddenLayers
 
 # from sac_openai_cuda import sac, OUNoise
 # from sac_openai_cuda_nets import MLPActorCritic
 from plot_episode_logs import plot_episode_logs
 
 
-selected_alg = st.selectbox("Select an algorithm", ["ARS"],)
+algs_by_name = {
+    "ARS": augmentedRandomSearch,
+    "ARS_hidden_layer": augmentedRandomSearch_hiddenLayers,
+}
 
-algs_by_name = {"ARS": augmentedRandomSearch}
+selected_alg = st.selectbox("Select an algorithm", list(algs_by_name))
 
 algorithm = algs_by_name[selected_alg]
 
@@ -66,6 +70,7 @@ if train_fresh_model:
     ac, step_log, episode_log = algorithm(
         env_fn,
         env_name=selected_env,
+        alg_name=selected_alg,
         episodes_per_epoch=episodes_per_epoch,
         epochs=epochs,
         epoch_plot_fig_handler=model_trainer_fig_update_handler,
