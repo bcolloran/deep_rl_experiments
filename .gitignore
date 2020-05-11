@@ -13,3 +13,4 @@ dist
 *.pt
 *.npz
 **/model_runs/
+**/*.egg-info/
