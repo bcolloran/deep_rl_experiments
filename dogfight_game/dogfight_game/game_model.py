@@ -200,7 +200,7 @@ class GameEnv:
     def __init__(self, **kwargs):
         self.__KWARGS = kwargs
         self._init(**self.__KWARGS)
-        print("init game env", kwargs)
+        print("init game env now", kwargs)
 
     def _init(self, N_agents=8, enemy_type="random"):
         self.N_agents = N_agents
@@ -217,6 +217,9 @@ class GameEnv:
         self.rewards = zeros((N_agents, 0))
         self.turnsSoFar = 0
 
+        self.observation_space = np.zeros_like(self.getLatestTurnEndStateVector())
+        self.action_space = actionSpaceBounds
+
     def pickDefaultActions(self):
         N = self.N_agents
         if self.enemy_type == "random":
@@ -227,9 +230,6 @@ class GameEnv:
             return np.vstack([ones(N), np.zeros(N)])
         print("WARNING -- unknown enemy type given:", self.enemy_type)
         return randomActions(N)
-
-    # def getAgent0RewardsForActions(self, actions):
-    #     return self.getAgentRewardsForActions(0, actions)
 
     def getAgentRewardsForActions(self, agent, action_options, all_actions):
         rewards = []
@@ -250,32 +250,11 @@ class GameEnv:
             bestAction = sample(zeroActions, 1)[0]
         return bestAction, rewards[i]
 
-    # def pickBestAgent0RewardsForActions(self, action_options, actions):
-    #     rewards = self.getAgent0RewardsForActions(actions)
-    #     i = np.argmax(rewards)
-    #     bestAction = actions[i]
-    #     # if no action produces >0 reward, choose from among
-    #     # actions that produce 0 reward
-    #     if rewards[i] == 0:
-    #         zeroActions = [a for j, a in enumerate(actions) if rewards[i] == 0]
-    #         bestAction = sample(zeroActions, 1)[0]
-    #     return bestAction, rewards[i]
-
     def act(self, actions):
         """
         agent_0_action elements are always in [-1,1],
         and need to be rescaled for the game
         """
-        # distance, yaw = self.pickDefaultActions()
-
-        # scaledAction = rescaleColumns(
-        #     np.array(np.array([distance, yaw])),
-        #     np.array([[-1, 1], [-1, 1]]),
-        #     self.getActionSpaceBounds(),
-        # )
-
-        # distance = scaledAction[0, :]
-        # yaw = scaledAction[1, :]
 
         scaledAction = rescaleColumns(
             actions, np.array([[-1, 1], [-1, 1]]), self.getActionSpaceBounds(),
@@ -283,7 +262,7 @@ class GameEnv:
 
         return doTurn(self.getLatestTurnEndStateTup(), scaledAction)
 
-    def step(self, actions):
+    def step_actions_for_all(self, actions):
         """
         agent_0_action elements are always in [-1,1],
         and need to be rescaled for the game
@@ -309,6 +288,17 @@ class GameEnv:
 
         return next_state, reward[0, 0], done, None
 
+    def step(self, action):
+        """
+        agent_0_action elements are always in [-1,1],
+        and need to be clipped rescaled for the game
+        """
+        actions = self.pickDefaultActions()
+
+        actions[:, 0] = np.clip(action, -1, 1)
+
+        return self.step_actions_for_all(actions)
+
     def getLatestTurnEndStateTup(self):
         return self.latestPositions, self.latestHeadings, self.latestHealth
 
@@ -322,10 +312,6 @@ class GameEnv:
 
     def getTurnDataTup(self):
         return self.positions, self.headings, self.health, self.hits, self.rewards
-
-    def stateSize(self):
-        # 2 for pos, 1 for
-        return self.getLatestTurnEndStateVector().shape[0]
 
     def reset(self, positions=None, headings=None, health=None):
         self._init(**self.__KWARGS)
