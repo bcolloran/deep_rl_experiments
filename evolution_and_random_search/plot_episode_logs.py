@@ -45,22 +45,26 @@ def plot_episode_logs(episode_log, post_update_fig_handler=None):
     ax_batch_reward_std_vs_episode.set_xlabel("episode")
     ax_batch_reward_std_vs_episode.set_ylabel("std dev of rewards")
 
-    plt.tight_layout()
-
-    def update_plot():
-
-        elapsed_time = episode_log["elapsed time"][-1]
-
-        num_episode = len(episode_log["episode num"])
-
-        plot_title = (
+    def plot_title(num_episode, episode_log, elapsed_time):
+        return (
             f"episode {num_episode}"
             f"\nlast 100 avg episode score: {np.mean(episode_log['reward'][-100:]):.2f}"
             f"\ntime: {elapsed_time_string(elapsed_time)}"
             f" {elapsed_time / num_episode:.4f}s/episode)"
         )
 
-        ax_reward_vs_episode.set_title(plot_title)
+    ax_reward_vs_episode.set_title(plot_title(1, episode_log, 0))
+
+    plt.tight_layout()
+
+    def update_plot():
+        elapsed_time = episode_log["elapsed time"][-1]
+
+        num_episode = len(episode_log["episode num"])
+
+        ax_reward_vs_episode.set_title(
+            plot_title(num_episode, episode_log, elapsed_time)
+        )
         ax_reward_vs_episode.plot(episode_log["reward"], "k")
 
         ax_steps_vs_episode.plot(

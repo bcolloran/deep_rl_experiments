@@ -11,6 +11,7 @@ from ARS_hidden_layer import augmentedRandomSearch_hiddenLayers
 # from sac_openai_cuda import sac, OUNoise
 # from sac_openai_cuda_nets import MLPActorCritic
 from plot_episode_logs import plot_episode_logs
+from dogfight_game import GameEnv
 
 
 algs_by_name = {
@@ -22,20 +23,24 @@ selected_alg = st.selectbox("Select an algorithm", list(algs_by_name))
 
 algorithm = algs_by_name[selected_alg]
 
-selected_env = st.selectbox(
-    "Select an environment",
-    [
-        "BipedalWalker-v2",
-        "Pendulum-v0",
-        "BipedalWalkerHardcore-v2",
-        "MountainCarContinuous-v0",
-        "LunarLanderContinuous-v2",
-    ],
-)
+gym_envs = [
+    "BipedalWalker-v2",
+    "Pendulum-v0",
+    "BipedalWalkerHardcore-v2",
+    "MountainCarContinuous-v0",
+    "LunarLanderContinuous-v2",
+]
+
+my_envs = ["dogfight_game"]
+
+selected_env = st.selectbox("Select an environment", gym_envs + my_envs)
 
 
 def env_fn():
-    return gym.make(selected_env)
+    if selected_env in gym_envs:
+        return gym.make(selected_env)
+    else:
+        return GameEnv()
 
 
 episodes_per_epoch = st.number_input(
@@ -126,6 +131,7 @@ def load_and_run_model(checkpoint_filename, num_runs=4):
     env = gym.make(selected_env)
 
     saved_model = np.load(checkpoint_filename)
+    print("saved_model", saved_model)
 
     pi_weights = saved_model["weights"]
     obs_mean = saved_model["observed_state_mean"]

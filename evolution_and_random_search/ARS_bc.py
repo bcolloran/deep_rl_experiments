@@ -23,6 +23,7 @@ def timestamp():
 def augmentedRandomSearch(
     env_fn,
     env_name,
+    alg_name="unknown_alg",
     directions_per_episode=16,
     episodes_per_epoch=1000,
     epochs=100,
@@ -95,32 +96,39 @@ def augmentedRandomSearch(
     def act(state, pi_weights):
         # print("pi_weights, state", pi_weights, state)
         whitened_state = whiten_state(state)
-        return np.matmul(pi_weights, whitened_state)
+        return np.matmul(pi_weights, whitened_state).ravel()
 
-    def env_step_reshape(action):
-        state, reward, done, _ = env.step(action)
-        return state.reshape(-1, 1), reward, done, _
+    # def env_step_reshape(action):
+    #     state, reward, done, _ = env.step(action)
+    #     return state.reshape(-1, 1), reward, done, _
 
-    def env_reset_reshape():
-        state = env.reset()
-        return state.reshape(-1, 1)
+    # def env_reset_reshape():
+    #     state = env.reset()
+    #     return state.reshape(-1, 1)
 
     def run_trajectory(pi_weights, train=True):
         nonlocal welford_var_agg
         nonlocal observed_state_mean
         nonlocal observed_state_std
         nonlocal num_states_observed
-        state = env_reset_reshape()
+
+        state = env.reset().reshape(-1, 1)
+        # state =  state
+
         total_reward = 0
         for steps in range(max_steps_per_episode):
             num_states_observed += 1
 
             action = act(state, pi_weights)
-            state, reward, done, _ = env_step_reshape(action)
+            # state, reward, done, _ = env_step_reshape(action)
 
-            if abs(state[2, 0]) < 0.001:
-                reward = np.array([-100])
-                done = True
+            state, reward, done, _ = env.step(action)
+            state = state.reshape(-1, 1)
+
+            # HACK THAT ONLY WORKS FOR BIPED!!!
+            # if abs(state[2, 0]) < 0.001:
+            #     reward = -100
+            #     done = True
 
             total_reward += reward
 
@@ -203,7 +211,9 @@ def augmentedRandomSearch(
                 f"     elapsed time: {elapsed_time_string(elapsed_time)}"
             )
 
-            log_path = f"{os.getcwd()}/model_runs/ARS/{env_name}/{run_datetime_str}"
+            log_path = (
+                f"{os.getcwd()}/model_runs/{alg_name}/{env_name}/{run_datetime_str}"
+            )
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
             log_filename = f"/log.pkl"
