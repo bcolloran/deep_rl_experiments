@@ -39,12 +39,18 @@ time_steps = st.number_input(
 )
 
 
-random_seed = st.number_input(
-    label="random seed", min_value=0, value=1, step=1, format="%.0d"
+random_seed_initial_conditions = st.number_input(
+    label="random seed for initial conditions",
+    min_value=0,
+    value=1,
+    step=1,
+    format="%.0d",
 )
 
 
-np.random.seed(random_seed)
+np.random.seed(random_seed_initial_conditions)
+env = GameEnv(N_agents=N_agents, enemy_type="straight")
+
 
 x = np.linspace(-1, 1, 5)
 y = np.linspace(-1, 1, 5)
@@ -52,7 +58,12 @@ X, Y = np.meshgrid(x, y)
 action_options = list(zip(X.ravel(), Y.ravel()))
 
 start = time.time()
-env = GameEnv(N_agents=N_agents, enemy_type="straight")
+
+random_seed_dynamics = st.number_input(
+    label="random seed for dynamics", min_value=0, value=1, step=1, format="%.0d"
+)
+
+np.random.seed(random_seed_dynamics)
 for i in range(time_steps):
 
     default_actions = env.pickDefaultActions()
