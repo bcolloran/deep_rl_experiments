@@ -58,11 +58,6 @@ random_seed = st.number_input(
     label="random seed", min_value=0, value=1, step=1, format="%.0d",
 )
 
-# start_steps = st.number_input(
-#     label="random steps at start", min_value=0, value=10000, step=1, format="%.0d",
-# )
-
-
 train_fresh_model = st.button("train a fresh model")
 fresh_train_plot = st.empty()
 

@@ -44,22 +44,16 @@ class StandardizingLinearAgent:
         model_matrix = params.reshape(self.action_dim, self.state_dim)
 
         std_state = self.standardizer.standardize_state(state)
-        # print("std_state", std_state)
-        # print("model_matrix", model_matrix)
 
         return np.matmul(model_matrix, std_state).ravel()
 
     def run_trajectory_in_env(self, env, testing=False, params=None):
         state = env.reset()
-
         total_reward = 0
         for steps in range(self.max_trajectory_steps):
             if not testing:
                 self.standardizer.observe_state(state)
-            # print("state", state)
-            # print("params", params)
             action = self.act(state, params)
-            # print("action", action)
             state, reward, done, _ = env.step(action)
             total_reward += reward
             if done:

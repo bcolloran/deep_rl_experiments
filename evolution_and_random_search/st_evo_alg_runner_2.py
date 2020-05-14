@@ -78,13 +78,10 @@ def examine_existing_model_run(run_dirname):
     st.write(f"You selected run `{run_dirname}`")
 
     with open(run_dirname + "/log.pkl", "rb") as pickle_file:
-        # print(pickle_file)
         log_info = pickle.load(pickle_file)
-    # print(list(log_info))
     st.write(log_info["run params"])
 
     episode_log = log_info["episode log"]
-    # step_log = log_info["step log"]
 
     fig, plt_update_fn = plot_episode_logs(episode_log)
     plt_update_fn()
@@ -108,22 +105,8 @@ def examine_existing_model_run(run_dirname):
         agent = agent_class(state_dim, action_dim)
 
         with open(checkpoint_filename, "rb") as pickle_file:
-            # print(pickle_file)
             agent_state_dict = pickle.load(pickle_file)
         agent.load_agent_state_dict(agent_state_dict)
-
-        # saved_model = np.load(checkpoint_filename)
-        # print("saved_model", saved_model)
-
-        # pi_weights = saved_model["weights"]
-        # obs_mean = saved_model["observed_state_mean"]
-        # obs_std = saved_model["observed_state_std"]
-
-        # def normalize(inputs):
-        #     return (inputs - obs_mean) / obs_std
-
-        # def act(state, pi_weights):
-        #     return np.matmul(pi_weights, normalize(state.reshape(-1, 1)))
 
         for i in range(num_runs):
             print(f"showing {i} of {num_runs} runs")
