@@ -14,6 +14,7 @@ from ARS_optimizer import ARS_optimizer
 from CMA_optimizer import CMA_optimizer
 
 from standardizing_linear_agent import StandardizingLinearAgent
+from standardizing_mlp_agent import StandardizingMLPAgent
 
 from plot_episode_logs import plot_episode_logs
 from dogfight_game import GameEnv
@@ -33,6 +34,7 @@ optimizer_class = optimizers_by_name[selected_optim]
 #### AGENTS
 agents_by_name = {
     "StandardizingLinearAgent": StandardizingLinearAgent,
+    "StandardizingMLPAgent": StandardizingMLPAgent,
 }
 
 selected_agent = st.selectbox("Select an agent", list(agents_by_name))

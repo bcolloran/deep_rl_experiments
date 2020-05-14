@@ -2,7 +2,7 @@ import cma
 
 
 class CMA_optimizer:
-    def __init__(self, starting_params, sigma0=0.5, pop_size=None):
+    def __init__(self, starting_params, sigma0=3, pop_size=None):
         self.opt = cma.CMAEvolutionStrategy(starting_params, sigma0)
         print("cma popsize", self.opt.popsize)
 
