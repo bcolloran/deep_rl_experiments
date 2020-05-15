@@ -50,3 +50,48 @@ class StateStandardizer:
         self.observed_state_std = np.sqrt(
             self.welford_var_agg / self.num_states_observed
         ).clip(min=self.min_normalization_std)
+
+
+class CenteredLinearRescaler:
+    def __init__(self, min_vals, max_vals, scale=1):
+        self.min_vals = np.array(min_vals)
+        self.max_vals = np.array(max_vals)
+        self.scale = scale
+
+    def load_state_dict(self, data_dict):
+        self.min_vals = data_dict["min_vals"]
+        self.max_vals = data_dict["max_vals"]
+        self.scale = data_dict["scale"]
+
+    def get_state_dict(self):
+        data_dict = {}
+        data_dict["min_vals"] = self.min_vals
+        data_dict["max_vals"] = self.max_vals
+        data_dict["scale"] = self.scale
+        return data_dict
+
+    def standardize_state(self, state):
+        # rescale into [0,1]
+        X = (state - self.min_vals) / (self.max_vals - self.min_vals)
+        # recenter areound zero; double to map into [-1,1], then apply scaling
+        return (X - 0.5) * 2 * self.scale
+
+    def observe_state(self, state):
+        pass
+
+
+class IdentityRescaler:
+    def __init__(self):
+        pass
+
+    def load_state_dict(self, data_dict):
+        pass
+
+    def get_state_dict(self):
+        return {}
+
+    def standardize_state(self, state):
+        return state
+
+    def observe_state(self, state):
+        pass
