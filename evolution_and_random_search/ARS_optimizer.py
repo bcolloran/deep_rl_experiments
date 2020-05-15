@@ -10,7 +10,6 @@ class ARS_optimizer:
         pop_size=16,
         std_dev_exploration_noise=0.03,
     ):
-        self.name = "ARS"
         self.params = starting_params
         self.dim = starting_params.shape[0]
         self.N = pop_size

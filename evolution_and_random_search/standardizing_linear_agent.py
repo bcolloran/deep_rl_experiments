@@ -10,7 +10,6 @@ class StandardizingLinearAgent:
         max_trajectory_steps=1000,
         min_normalization_std=0.01,
     ):
-        self.name = "StandardizingLinearAgent"
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.max_trajectory_steps = max_trajectory_steps
