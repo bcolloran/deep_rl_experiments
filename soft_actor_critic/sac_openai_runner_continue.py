@@ -18,8 +18,8 @@ print(device)
 selected_env = st.selectbox(
     "Select an environment",
     [
-        "Pendulum-v0",
         "BipedalWalker-v2",
+        "Pendulum-v0",
         "BipedalWalkerHardcore-v2",
         "MountainCarContinuous-v0",
         "LunarLanderContinuous-v2",
@@ -32,14 +32,18 @@ def env_fn():
 
 
 steps_per_epoch = st.number_input(
-    label="steps per epoch", min_value=0, value=4000, step=1, format="%.0d",
+    label="steps per epoch", min_value=0, value=1000, step=1, format="%.0d",
 )
 
-epochs = st.number_input(label="epochs", min_value=0, value=100, step=1, format="%.0d",)
+epochs = st.number_input(
+    label="epochs", min_value=0, value=1000, step=1, format="%.0d",
+)
 
 start_steps = st.number_input(
-    label="random steps at start", min_value=0, value=10000, step=1, format="%.0d",
+    label="random steps at start", min_value=0, value=1000, step=1, format="%.0d",
 )
+
+seed = st.number_input(label="seed", min_value=0, value=1, step=1, format="%.0d",)
 
 
 train_fresh_model = st.button("train a fresh model")
@@ -58,7 +62,7 @@ if train_fresh_model:
         steps_per_epoch=steps_per_epoch,
         epochs=epochs,
         update_every=5,
-        # alpha=.5,
+        seed=seed,
         batch_size=128,
         ac_kwargs={"hidden_sizes": (128, 128)},
         lr=0.00007,
@@ -170,13 +174,13 @@ if train_more:
         env_fn,
         actor_critic=newAcFromOld(actor_net),
         start_steps=0,
-        steps_per_epoch=500,
+        steps_per_epoch=1000,
         # max_ep_len=100,
         update_every=1,
-        epochs=200,
+        epochs=1000,
         use_logger=False,
-        alpha=0.2,
-        lr=0.0005,
+        alpha=0.005,
+        lr=0.0003,
         # batch_size=256,
         # lr=7e-3,
         add_noise=True,
