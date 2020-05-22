@@ -87,6 +87,12 @@ def init_network_params_zeros(sizes):
     ]
 
 
+def init_network_params_ones(sizes):
+    return [
+        (numpy.ones((n, m)), numpy.ones((n, 1))) for m, n in zip(sizes[:-1], sizes[1:])
+    ]
+
+
 ### PREDICTION AND OPTIMIZATION
 
 
@@ -94,17 +100,16 @@ def init_network_params_zeros(sizes):
 def predict(params, x):
     # per-example predictions
     for w, b in params[:-1]:
-        # x = w @ x
-        # x = x + b
-        # x = relu(x)
-        x = relu(np.dot(w, x) + b)
+        # x = relu(np.dot(w, x) + b)
+        x = relu(w @ x + b)
     w, b = params[-1]
     return np.dot(w, x) + b
 
 
 @jit
 def loss(params, data):
-    return np.sum([(y - predict(params, x)) ** 2 for x, y in data])
+    X, Y = data
+    return np.sum((Y - predict(params, X)) ** 2)
 
 
 @jit
@@ -124,7 +129,8 @@ def update_normalize_grad(params, data, LR):
 
 def make_data_set(target_fn, target_dim, batch_size):
     X = 2 * numpy.random.rand(target_dim, batch_size) - 1
-    return [(X[:, i : i + 1], target_fn(X[:, i : i + 1])) for i in range(batch_size)]
+    Y = target_fn(X)
+    return X, Y
 
 
 ### MODEL FITTER
