@@ -12,11 +12,23 @@ def combined_shape(length, shape=None):
     return (length, shape) if np.isscalar(shape) else (length, *shape)
 
 
-def mlp(sizes, activation, output_activation=nn.Identity):
+# def mlp_layers(sizes, activation, output_activation=nn.Identity):
+#     layers = []
+#     for j in range(len(sizes) - 1):
+#         act = activation if j < len(sizes) - 2 else output_activation
+#         layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
+#     return nn.Sequential(*layers)
+
+# this version uses He-Kaiming initialization
+def mlp_layers(sizes, activation, output_activation=nn.Identity):
     layers = []
     for j in range(len(sizes) - 1):
         act = activation if j < len(sizes) - 2 else output_activation
-        layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
+        lin = nn.Linear(sizes[j], sizes[j + 1])
+        with torch.no_grad():
+            lin.weight.normal_(mean=0, std=np.sqrt(2 / sizes[j]))
+        nn.init.zeros_(lin.bias)
+        layers += [lin, act()]
     return nn.Sequential(*layers)
 
 
@@ -31,7 +43,7 @@ LOG_STD_MIN = -20
 class SquashedGaussianMLPActor(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
-        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
+        self.net = mlp_layers([obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
@@ -73,7 +85,7 @@ class SquashedGaussianMLPActor(nn.Module):
 class MLPQFunction(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp_layers([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs, act):
         q = self.q(torch.cat([obs, act], dim=-1))
