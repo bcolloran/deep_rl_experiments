@@ -6,9 +6,6 @@ import jax.numpy as np
 from jax import random
 from jax.ops import index, index_add, index_update
 
-import matplotlib.pyplot as plt
-from IPython.display import display, clear_output
-
 
 @jit
 def relu(x):
@@ -136,47 +133,9 @@ def make_data_set(target_fn, target_dim, batch_size):
 ### MODEL FITTER
 
 
-class Plotter1d(object):
-    def __init__(self, target_fn, Xs=None, jupyter=True):
-        # self.predict = predict
-        self.target_fn = target_fn
-
-        if Xs is None:
-            self.Xs = numpy.linspace(-1, 1, 100)
-
-        fig, (axFit, axLoss) = plt.subplots(1, 2, figsize=(20, 5))
-
-        self.fig = fig
-        self.axFit = axFit
-        self.axLoss = axLoss
-        self.jupyter = True if jupyter else False
-
-    def update_plot(self, params, loss_list, batch, Xs=None):
-        if loss_list == []:
-            loss_list = [0]
-        self.fig.suptitle(f"batch {batch}, loss {loss_list[-1]}", fontsize=14)
-
-        self.axFit.clear()
-        self.axFit.plot(self.Xs, predict(params, self.Xs.reshape(1, -1)).flatten())
-        self.axFit.plot(self.Xs, self.target_fn(self.Xs))
-
-        self.axLoss.clear()
-        self.axLoss.plot(loss_list)
-        self.axLoss.set_yscale("log")
-        self.axLoss.set_yscale("log")
-
-        if self.jupyter:
-            clear_output(wait=True)
-            # plt.show()
-
-            display(self.fig)
-            # clear_output(wait=True)
-            # plt.show()
-
-
 def fit_model(
     LR=0.001,
-    LR_min=0.001,
+    LR_min=0.0,
     decay=1,
     epoch_size=100,
     num_epochs=10,
@@ -186,9 +145,8 @@ def fit_model(
     layers=[None, 80, 40, 20, 1],
     layer_initializer=init_network_params_He,
     params=None,
-    plot_fn=None,
+    plotter=None,
 ):
-    LR_0 = LR
     layers[0] = target_fn_dim
 
     loss_list = []
@@ -196,9 +154,10 @@ def fit_model(
     if params is None:
         params = layer_initializer(layers)
 
-    if plot_fn is not None:
-        epoch = 0
-        plot_fn(params, loss_list, epoch)
+    if plotter is not None:
+        Yhat = predict(params, plotter.plotX)
+        print(Yhat)
+        plotter.update_plot(Yhat, loss_list, batch_num=0)
 
     for i in range(epoch_size * num_epochs):
         data = make_data_set(target_fn, target_fn_dim, batch_size)
@@ -209,7 +168,7 @@ def fit_model(
             print("loss is nan")
             break
 
-        LR = max(LR_0 * decay ** i, LR_min)
+        LR = max(LR * decay, LR_min)
 
         params = update(params, data, LR)
         print(f"batch {i}, loss {l}, LR {LR}", end="\r")
@@ -217,14 +176,15 @@ def fit_model(
         if (i + 1) % epoch_size == 0:
             # print("epoch")
             param_list.append(params)
-            if plot_fn is not None:
+            if plotter is not None:
                 # print("should plot")
-                plot_fn(params, loss_list, i)
+                Yhat = predict(params, plotter.plotX)
+                plotter.update_plot(Yhat, loss_list, i)
 
     return param_list, loss_list
 
 
-# @jit
+@jit
 def update_adam(params, data, ms, vs, t, LR, beta1=0.9, beta2=0.99, eps=1e-8):
     # https://towardsdatascience.com/adam-latest-trends-in-deep-learning-optimization-6be9a291375c
     grads = grad(loss)(params, data)
