@@ -8,6 +8,8 @@ import time
 import datetime
 import sac_openai_cuda_nets as core
 
+from state_standardizer import RewardStandardizer
+
 # from collections import deque
 # import matplotlib.pyplot as plt
 
@@ -229,6 +231,8 @@ def sac(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+    reward_standardizer = RewardStandardizer()
+
     env, test_env = env_fn(), env_fn()
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
@@ -266,6 +270,7 @@ def sac(
             data["obs2"],
             data["done"],
         )
+        reward = reward_standardizer.standardize_reward(reward)
 
         q1 = ac.q1(o, a)
         q2 = ac.q2(o, a)
@@ -388,12 +393,13 @@ def sac(
         "episode done": [],
     }
 
-    _, update_plot = plot_run_logs(
-        episode_log,
-        step_log,
-        total_steps=total_steps,
-        post_update_fig_handler=epoch_plot_fig_handler,
-    )
+    if epoch_plot_fig_handler is not None:
+        _, update_plot = plot_run_logs(
+            episode_log,
+            step_log,
+            total_steps=total_steps,
+            post_update_fig_handler=epoch_plot_fig_handler,
+        )
 
     start_noise_this_episode = False
     for t in range(total_steps):
@@ -429,6 +435,8 @@ def sac(
         # horizon (that is, when it's an artificial terminal signal
         # that isn't based on the agent's state)
         d = False if ep_len == max_ep_len else d
+
+        reward_standardizer.observe_reward(r)
 
         # Store experience to replay buffer
         replay_buffer.store(o, a, r, o2, d)
@@ -494,8 +502,8 @@ def sac(
                     },
                     pickle_file,
                 )
-
-            update_plot()
+            if epoch_plot_fig_handler is not None:
+                update_plot()
     return ac, step_log, episode_log
 
 

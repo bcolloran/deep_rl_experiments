@@ -179,7 +179,7 @@ if train_more:
         update_every=1,
         epochs=1000,
         use_logger=False,
-        alpha=0.005,
+        alpha=0.2,
         lr=0.0003,
         # batch_size=256,
         # lr=7e-3,
