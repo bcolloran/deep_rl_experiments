@@ -3,31 +3,9 @@ import numpy as np
 import time
 import streamlit as st
 
-# from game_model import doTurn, randomActions, intitialState, GameEnv
-# from game_model import GameEnv
-# from plot_game_data import plotGameData
-
-from dogfight_game import GameEnv, plotGameData
-
-randn = np.random.randn
-rand = np.random.rand
+from dogfight_game import GameEnv, plotGameData, best_reply_game_rollout
 
 print("\n\n\n\n\n++++++++++++++++++++NEW RUN++++++++++++++")
-
-
-# start = time.time()
-# initial_state = intitialState()
-# positions, headings, health, hits, reward = doTurn(
-# initial_state, randomActions(initial_state[0].shape[1]))
-# end = time.time()
-# print("Elapsed = %s" % (end - start))
-
-# start = time.time()
-# initial_state = intitialState()
-# positions, headings, health, hits, reward = doTurn(
-# initial_state, randomActions(initial_state[0].shape[1]))
-# end = time.time()
-# print("Elapsed 2nd run = %s" % (end - start))
 
 
 N_agents = st.number_input(
@@ -41,15 +19,12 @@ time_steps = st.number_input(
 
 random_seed_initial_conditions = st.number_input(
     label="random seed for initial conditions",
-    min_value=0,
+    min_value=1,
     value=1,
     step=1,
     format="%.0d",
 )
-
-
 np.random.seed(random_seed_initial_conditions)
-env = GameEnv(N_agents=N_agents, enemy_type="straight")
 
 
 x = np.linspace(-1, 1, 5)
@@ -57,49 +32,42 @@ y = np.linspace(-1, 1, 5)
 X, Y = np.meshgrid(x, y)
 action_options = list(zip(X.ravel(), Y.ravel()))
 
-start = time.time()
-
 random_seed_dynamics = st.number_input(
-    label="random seed for dynamics", min_value=0, value=1, step=1, format="%.0d"
+    label="random seed for dynamics", min_value=1, value=1, step=1, format="%.0d"
 )
 
-np.random.seed(random_seed_dynamics)
-for i in range(time_steps):
 
-    default_actions = env.pickDefaultActions()
-    actions = np.zeros_like(default_actions)
-    for agent in range(actions.shape[1]):
-        action, bestReward = env.pickBestAgentRewardsForActions(
-            agent, action_options, default_actions
-        )
-
-        actions[:, agent] = action
-
-    action, bestReward = env.pickBestAgentRewardsForActions(0, action_options, actions)
-    # distance, yaw = agent_action[0], agent_action[1]
-    # print(action)
-    actions[:, 0] = action
-
-    next_state, reward, done, _ = env.step_actions_for_all(actions)
-    if i == 0:
-        print("time to complete first step (jit): %s" % (time.time() - start))
-    if done:
-        st.write("done! iter: ", i)
-        st.write("rewards:\n", reward)
-        if not np.isnan(env.getDeathTimes()[0]):
-            st.write("Main agent died")
-        else:
-            st.write(f"Agent0 killed all others at turn {i}")
-        break
-    # st.write(reward)
+agent0_2ndReply = st.checkbox("Agent 0 best reply to other agents best replies")
+agent0_lookahead = st.checkbox("Agent 0 looks ahead one turn")
 
 
-print("time to complete all steps: %s" % (time.time() - start))
+start_time = time.time()
+env = best_reply_game_rollout(
+    N_agents,
+    time_steps,
+    action_options,
+    random_seed_initial_conditions,
+    random_seed_dynamics,
+    agent0_2ndReply,
+    agent0_lookahead,
+)
+print("time to complete rollouts: %s" % (time.time() - start_time))
+
+st.write("agent 0 reward:\n", np.sum(env.rewards[0, :]))
+
 
 positions, headings, health, hits, reward = env.getTurnDataTup()
-start = time.time()
+start_time = time.time()
 st.pyplot(plotGameData(positions, hits, health, env.getDeathTimes()))
-print("time to draw plot: %s" % (time.time() - start))
+print("time to draw plot: %s" % (time.time() - start_time))
 
 st.write(f"enemies still alive: {np.isnan(env.getDeathTimes()).sum()}")
-st.line_chart(env.rewards[0, :])
+
+
+st.header("create a data set")
+
+create_dataset_button = st.button("create dataset")
+
+time_steps = st.number_input(
+    label="total steps", min_value=0, value=1000000, step=1, format="%.0d",
+)

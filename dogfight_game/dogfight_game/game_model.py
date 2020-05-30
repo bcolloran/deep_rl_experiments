@@ -1,10 +1,7 @@
-# import numba
 from numba import jit, njit
 import numpy as np
 from numpy import cos, sin, pi, ones, zeros
-from random import sample
 
-# import time
 
 _2pi = 2 * pi
 
@@ -45,7 +42,7 @@ damage_for_distance = 0.25 * damage_per_hit
 field_radius_squared = 10 ** 2
 wall_distance = 10
 
-death_penalty = -5
+death_penalty = -20
 damage_penalty = -5.1 * damage_per_hit
 hitting_bonus = 0.1 * damage_per_hit
 kill_bonus = 10
@@ -202,7 +199,9 @@ class GameEnv:
         self._init(**self.__KWARGS)
         print("init game env now", kwargs)
 
-    def _init(self, N_agents=8, enemy_type="random"):
+    def _init(self, N_agents=8, enemy_type="random", seed=0):
+        self.seed = seed
+        np.random.seed(seed)
         self.N_agents = N_agents
         self.enemy_type = enemy_type
 
@@ -231,15 +230,28 @@ class GameEnv:
         print("WARNING -- unknown enemy type given:", self.enemy_type)
         return randomActions(N)
 
-    def getAgentRewardsForActions(self, agent, action_options, all_actions):
+    def getAgentRewardsForActions(
+        self, agent, action_options, all_actions, state_tup=None
+    ):
+
+        if state_tup is None:
+            state_tup = self.getLatestTurnEndStateTup()
         rewards = []
         for agent_action in action_options:
             all_actions[:, agent] = agent_action
-            _, _, _, _, reward = self.act(all_actions)
+            _, _, _, _, reward = self.act(all_actions, state_tup)
             rewards.append(reward[agent, 0])
         return np.array(rewards)
 
-    def pickBestAgentRewardsForActions(self, agent, action_options, all_actions):
+    def pickBestAgentRewardsForActions(
+        self, agent, action_options, all_actions, state_tup=None
+    ):
+        # ensure that the same agent takes the same action at the same time
+        # (other factors being equal)
+        np.random.seed((132 + agent) * (137 + self.turnsSoFar) * (541 + self.seed))
+
+        if state_tup is None:
+            state_tup = self.getLatestTurnEndStateTup()
         rewards = self.getAgentRewardsForActions(agent, action_options, all_actions)
         i = np.argmax(rewards)
         bestAction = action_options[i]
@@ -247,10 +259,12 @@ class GameEnv:
         # action_options that produce 0 reward
         if rewards[i] == 0:
             zeroActions = [a for j, a in enumerate(action_options) if rewards[i] == 0]
-            bestAction = sample(zeroActions, 1)[0]
+            bestAction = zeroActions[np.random.randint(0, len(zeroActions))]
         return bestAction, rewards[i]
 
-    def act(self, actions):
+    def act(self, actions, state_tup=None):
+        if state_tup is None:
+            state_tup = self.getLatestTurnEndStateTup()
         """
         agent_0_action elements are always in [-1,1],
         and need to be rescaled for the game
@@ -260,7 +274,7 @@ class GameEnv:
             actions, np.array([[-1, 1], [-1, 1]]), self.getActionSpaceBounds(),
         )
 
-        return doTurn(self.getLatestTurnEndStateTup(), scaledAction)
+        return doTurn(state_tup, scaledAction)
 
     def step_actions_for_all(self, actions):
         """
@@ -288,16 +302,17 @@ class GameEnv:
 
         return next_state, reward[0, 0], done, None
 
-    def step(self, action):
-        """
-        agent_0_action elements are always in [-1,1],
-        and need to be clipped rescaled for the game
-        """
-        actions = self.pickDefaultActions()
+    # NOTE: agent0 version, deprecated
+    # def step(self, action):
+    #     """
+    #     agent_0_action elements are always in [-1,1],
+    #     and need to be clipped rescaled for the game
+    #     """
+    #     actions = self.pickDefaultActions()
 
-        actions[:, 0] = np.clip(action, -1, 1)
+    #     actions[:, 0] = np.clip(action, -1, 1)
 
-        return self.step_actions_for_all(actions)
+    #     return self.step_actions_for_all(actions)
 
     def getLatestTurnEndStateTup(self):
         return self.latestPositions, self.latestHeadings, self.latestHealth
