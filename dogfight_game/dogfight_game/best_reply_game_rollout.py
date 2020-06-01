@@ -12,7 +12,9 @@ def best_reply_game_rollout(
     agent0_lookahead,
 ):
     env = GameEnv(
-        N_agents=N_agents, enemy_type="straight", seed=random_seed_initial_conditions
+        N_agents=N_agents,
+        enemy_type="straight",
+        seed=int(random_seed_initial_conditions % 1e8),
     )
 
     for i in range(time_steps):

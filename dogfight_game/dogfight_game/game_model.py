@@ -197,7 +197,7 @@ class GameEnv:
     def __init__(self, **kwargs):
         self.__KWARGS = kwargs
         self._init(**self.__KWARGS)
-        print("init game env now", kwargs)
+        # print("init game env now", kwargs)
 
     def _init(self, N_agents=8, enemy_type="random", seed=0):
         self.seed = seed
@@ -214,6 +214,10 @@ class GameEnv:
         self.health = zeros((N_agents, 0))
         self.hits = zeros((N_agents, N_agents, 0))
         self.rewards = zeros((N_agents, 0))
+
+        self.saved_states = zeros((self.getStateDimension(), 0))
+        self.saved_actions = zeros((2, N_agents, 0))
+
         self.turnsSoFar = 0
 
         self.observation_space = np.zeros_like(self.getLatestTurnEndStateVector())
@@ -248,7 +252,9 @@ class GameEnv:
     ):
         # ensure that the same agent takes the same action at the same time
         # (other factors being equal)
-        np.random.seed((132 + agent) * (137 + self.turnsSoFar) * (541 + self.seed))
+        np.random.seed(
+            int((132 + agent) * (137 + self.turnsSoFar) * (541 + self.seed) % 1e8)
+        )
 
         if state_tup is None:
             state_tup = self.getLatestTurnEndStateTup()
@@ -281,7 +287,17 @@ class GameEnv:
         agent_0_action elements are always in [-1,1],
         and need to be rescaled for the game
         """
-
+        # print("self.saved_states", self.saved_states.shape)
+        # print(
+        #     "self.getLatestTurnEndStateVector",
+        #     self.getLatestTurnEndStateVector().reshape(-1, 1).shape,
+        # )
+        self.saved_states = np.concatenate(
+            [self.saved_states, self.getLatestTurnEndStateVector().reshape(-1, 1)], 1
+        )
+        self.saved_actions = np.concatenate(
+            [self.saved_actions, actions.reshape(2, self.N_agents, 1)], 2
+        )
         positions, headings, health, hits, reward = self.act(actions)
 
         self.latestPositions = positions[:, :, -1]

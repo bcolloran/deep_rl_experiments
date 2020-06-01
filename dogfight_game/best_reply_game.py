@@ -63,11 +63,7 @@ print("time to draw plot: %s" % (time.time() - start_time))
 
 st.write(f"enemies still alive: {np.isnan(env.getDeathTimes()).sum()}")
 
-
-st.header("create a data set")
-
-create_dataset_button = st.button("create dataset")
-
-time_steps = st.number_input(
-    label="total steps", min_value=0, value=1000000, step=1, format="%.0d",
-)
+print("env.positions\n", env.saved_states)
+print("env.actions\n", env.saved_actions)
+print("env.saved_actions2\n", env.saved_actions[:, 0, :])
+print("env.turnsSoFar\n", env.turnsSoFar)
