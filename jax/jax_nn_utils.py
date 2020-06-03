@@ -13,6 +13,26 @@ def relu(x):
 
 
 @jit
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
+
+
+def softmax_sample(x):
+    return softmax_sample_jit(x, numpy.random.rand(1))
+
+
+@jit
+def softmax_sample_jit(x, eps):
+    prob = softmax(x)
+    cumprob = 0
+    for i, p in enumerate(prob):
+        cumprob += p
+        if cumprob > eps:
+            return i
+
+
+@jit
 def normalize(x):
     return x / np.linalg.norm(x)
 
@@ -128,6 +148,17 @@ def make_data_set(target_fn, target_dim, batch_size):
     X = 2 * numpy.random.rand(target_dim, batch_size) - 1
     Y = target_fn(X)
     return X, Y
+
+
+class relu_MLP:
+    def __init__(self, sizes):
+        self.params = init_network_params_He(sizes)
+
+    def predict(self, data):
+        return predict(self.params, data)
+
+    def batch_update(self, data_batch, LR=0.001):
+        self.params = update(self.params, data_batch, LR)
 
 
 ### MODEL FITTER

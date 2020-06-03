@@ -17,6 +17,7 @@ class RewardStandardizer:
         self.observed_reward_std = data_dict["observed_reward_std"]
         self.welford_var_agg = data_dict["welford_var_agg"]
         self.num_rewards_observed = data_dict["num_rewards_observed"]
+        self.min_normalization_std = data_dict["min_normalization_std"]
 
     def get_reward_dict(self):
         data_dict = {}
