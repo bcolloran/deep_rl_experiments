@@ -1,10 +1,11 @@
 import numpy
 
-import jax
-from jax import grad, jit, vmap
+# import jax
+from jax import grad, jit, value_and_grad
 import jax.numpy as np
-from jax import random
-from jax.ops import index, index_add, index_update
+
+# from jax import random
+# from jax.ops import index, index_add, index_update
 
 
 @jit
@@ -54,7 +55,7 @@ def checkerboard(N, M):
     return numpy.outer(alternating_array(N, -1.0, 1.0), alternating_array(M, 1.0, -1.0))
 
 
-###  INITIALIZATION
+#  INITIALIZATION
 
 
 def init_network_params_randn(sizes, scale=1e-2):
@@ -110,6 +111,18 @@ def init_network_params_ones(sizes):
     ]
 
 
+def copy_network(params):
+    return [(w.copy(), b.copy()) for (w, b) in params]
+
+
+@jit
+def interpolate_networks(params_current, params_goal, tau):
+    return [
+        (tau * w + (1 - tau) * w2, tau * b + (1 - tau) * b2)
+        for (w, b), (w2, b2) in zip(params_goal, params_current)
+    ]
+
+
 ### PREDICTION AND OPTIMIZATION
 
 
@@ -126,13 +139,31 @@ def predict(params, x):
 @jit
 def loss(params, data):
     X, Y = data
-    return np.sum((Y - predict(params, X)) ** 2)
+    return np.mean((Y - predict(params, X)) ** 2)
 
 
 @jit
 def update(params, data, LR):
     grads = grad(loss)(params, data)
     return [(w - LR * dw, b - LR * db) for (w, b), (dw, db) in zip(params, grads)]
+
+
+@jit
+def update_value_TD0(V_params, R, S, S_next, discount, LR):
+    grads = grad(predict)(V_params, S)
+    TDerr = LR * (R + discount * predict(V_params, S_next) - predict(V_params, S))
+    return [
+        (w - TDerr * dw, b - TDerr * db) for (w, b), (dw, db) in zip(V_params, grads)
+    ]
+
+
+@jit
+def update_and_loss(params, data, LR):
+    value, grads = value_and_grad(loss)(params, data)
+    return (
+        [(w - LR * dw, b - LR * db) for (w, b), (dw, db) in zip(params, grads)],
+        value,
+    )
 
 
 @jit
@@ -164,7 +195,7 @@ class relu_MLP:
 ### MODEL FITTER
 
 
-def fit_model(
+def fit_model_to_target_fn(
     LR=0.001,
     LR_min=0.0,
     decay=1,
@@ -272,7 +303,7 @@ def update_adam(params, data, ms, vs, t, LR, beta1=0.9, beta2=0.99, eps=1e-8):
     )
 
 
-def fit_model_adam(
+def fit_model_to_target_fn_adam(
     LR=0.0001,
     # LR_min=0.001,
     # decay=0.99,
@@ -320,3 +351,83 @@ def fit_model_adam(
                 plot_fn(params, loss_list, i)
 
     return param_list, loss_list
+
+
+class RewardStandardizer:
+    def __init__(
+        self, min_normalization_std=0.0001,
+    ):
+        self.min_normalization_std = min_normalization_std
+
+        self.observed_reward_mean = 0
+        self.observed_reward_std = 0
+        self.welford_var_agg = 1
+        self.num_rewards_observed = 0
+
+    def load_reward_dict(self, data_dict):
+        self.observed_reward_mean = data_dict["observed_reward_mean"]
+        self.observed_reward_std = data_dict["observed_reward_std"]
+        self.welford_var_agg = data_dict["welford_var_agg"]
+        self.num_rewards_observed = data_dict["num_rewards_observed"]
+        self.min_normalization_std = data_dict["min_normalization_std"]
+
+    def get_reward_dict(self):
+        data_dict = {}
+        data_dict["observed_reward_mean"] = self.observed_reward_mean
+        data_dict["observed_reward_std"] = self.observed_reward_std
+        data_dict["welford_var_agg"] = self.welford_var_agg
+        data_dict["num_rewards_observed"] = self.num_rewards_observed
+        data_dict["min_normalization_std"] = self.min_normalization_std
+        return data_dict
+
+    def standardize_reward(self, reward):
+        # Note: for rewards, we ONLY rescale, not recenter--
+        # moving the mean can change some
+        # rewards from positive to negative (or vice versa), which can
+        # change an agent's "will to live" -- i.e., if a small negative rewards
+        # at each step is put in place to encourage an agent to try to end episodes
+        # quickly, recententering s.t. this ends up positive will encourage agents
+        # to stay alive indefinitely (or vice versa)
+        if self.num_rewards_observed == 0:
+            raise ValueError(
+                "num_rewards_observed==0; must observe at least one reward before standardizing"
+            )
+        return reward / self.observed_reward_std
+
+    def observe_reward(self, reward):
+        self.num_rewards_observed += 1
+
+        next_mean = (
+            self.observed_reward_mean
+            + (reward - self.observed_reward_mean) / self.num_rewards_observed
+        )
+
+        self.welford_var_agg += (reward - next_mean) * (
+            reward - self.observed_reward_mean
+        )
+
+        self.observed_reward_mean = next_mean
+
+        self.observed_reward_std = np.maximum(
+            np.sqrt(self.welford_var_agg / self.num_rewards_observed),
+            self.min_normalization_std,
+        )
+
+    def observe_reward_vec(self, rewards):
+        self.num_rewards_observed += np.prod(rewards.shape)
+
+        next_mean = (
+            self.observed_reward_mean
+            + (rewards - self.observed_reward_mean) / self.num_rewards_observed
+        )
+
+        self.welford_var_agg += np.sum(
+            (rewards - next_mean) * (rewards - self.observed_reward_mean)
+        )
+
+        self.observed_reward_mean = next_mean
+
+        self.observed_reward_std = np.maximum(
+            np.sqrt(self.welford_var_agg / self.num_rewards_observed),
+            self.min_normalization_std,
+        )
