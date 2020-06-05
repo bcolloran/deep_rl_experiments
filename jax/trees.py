@@ -160,10 +160,12 @@ class Tree2:
             if children == []
         ]
 
-    def softmax_sample_leaves_by_value(self):
-        leaves = self.get_leaves()
-        i = softmax_sample([leaf.value_est for leaf in leaves])
-        return leaves[i]
+    def softmax_sample_node_date_by_value(self):
+        # leaf_ids = self.get_leaf_ids()
+        i = softmax_sample(
+            [self.get_node_data[l_id].value_est for l_id in list(self.node_data)]
+        )
+        return self.get_node_data[i]
 
     def traverse_from_leaf_to_depth_1(self):
         pass
@@ -243,7 +245,7 @@ class RRTstar:
                     # numerical issue in near_ids requires that the
                     # step size used here be a bit less than the desired
                     # step_radius
-                    final_pos = x + 0.999 * step_radius * (targ - x) / targ_dist
+                    final_pos = x + 0.99999 * step_radius * (targ - x) / targ_dist
                 return final_pos
 
         self.step = step_fn
@@ -280,26 +282,12 @@ class RRTstar:
             for n_id in node_ids
         ]
 
-    # def cheapest_path(self, targ_state, near_ids):
-    #     id_cost_data_tups = path_costs_and_data_by_ids(near_ids)
-    #     min_cost = np.inf
-    #     for n_id, c, s in id_cost_data_tups:
-    #         # c = self.path_cost(node_id)
-    #         if c < min_cost:
-    #             min_cost = c
-    #             inbound_cost = min_cost + self.D(x)
-    #             cheapest_parent_id = n_id
-    #     return (cheapest_parent_id, inbound_cost)
-
     def grow_towards(self, targ_state):
         near_id, near_data = self.nearest_id(targ_state)
-        # print("near_id, near_data", near_id, near_data)
         new_state = self.step(near_data.state, targ_state)
-        # print(new_state)
         near_ids = self.near_ids(new_state)
 
         # find cheapest path to new node among near nodes
-        # print(near_ids)
         near_nodes_info = self.path_costs_state_inbound_by_ids(near_ids)
         min_cost = np.inf
         for n_id, cost, state, in_cost in near_nodes_info:
@@ -313,12 +301,6 @@ class RRTstar:
             cheapest_parent_id,
             self.node_tup_fun(state=new_state, inbound_cost=inbound_cost),
         )
-        # print(
-        #     f"inbound_cost: {inbound_cost};\n"
-        #     f"min_cost: {min_cost};\n"
-        #     # f"min_cost + inbound_cost: {min_cost + inbound_cost};\n"
-        #     f"calculated cost {self.path_cost(new_id)}"
-        # )
         new_path_cost = min_cost
 
         # rewire near nodes if it's cheaper to go through the new node
@@ -327,18 +309,8 @@ class RRTstar:
                 # no need to process the parent of the new node
                 continue
             dist = self.D(new_state, state)
-            # print(
-            #     f"-----------"
-            #     f"point: {str(state)}\n"
-            #     f"prev cost {cost}\n"
-            #     f"prev in_cost {in_cost}\n"
-            #     f"dist {dist}\n"
-            #     f"new_path_cost + dist: {new_path_cost + dist}\n"
-            # )
+
             if new_path_cost + dist < cost:
-                # print(f"rewire new parent: {str(new_state)}")
                 self.T.change_parent(n_id, new_parent_id=new_id)
                 data = self.node_tup_fun(state=state, inbound_cost=dist)
                 self.T.set_node_data(n_id, data)
-
-        # print(f"parents: {str(self.T.parents_of_node)}")
