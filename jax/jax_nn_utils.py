@@ -354,6 +354,8 @@ def fit_model_to_target_fn_adam(
 
 
 class RewardStandardizer:
+    # uses combined variance formula here:
+    # https://www.emathzone.com/tutorials/basic-statistics/combined-variance.html
     def __init__(
         self, min_normalization_std=0.0001,
     ):
@@ -361,13 +363,13 @@ class RewardStandardizer:
 
         self.observed_reward_mean = 0
         self.observed_reward_std = 0
-        self.welford_var_agg = 1
+        self.var_agg = 0
         self.num_rewards_observed = 0
 
     def load_reward_dict(self, data_dict):
         self.observed_reward_mean = data_dict["observed_reward_mean"]
         self.observed_reward_std = data_dict["observed_reward_std"]
-        self.welford_var_agg = data_dict["welford_var_agg"]
+        self.var_agg = data_dict["var_agg"]
         self.num_rewards_observed = data_dict["num_rewards_observed"]
         self.min_normalization_std = data_dict["min_normalization_std"]
 
@@ -375,7 +377,7 @@ class RewardStandardizer:
         data_dict = {}
         data_dict["observed_reward_mean"] = self.observed_reward_mean
         data_dict["observed_reward_std"] = self.observed_reward_std
-        data_dict["welford_var_agg"] = self.welford_var_agg
+        data_dict["var_agg"] = self.var_agg
         data_dict["num_rewards_observed"] = self.num_rewards_observed
         data_dict["min_normalization_std"] = self.min_normalization_std
         return data_dict
@@ -402,32 +404,35 @@ class RewardStandardizer:
             + (reward - self.observed_reward_mean) / self.num_rewards_observed
         )
 
-        self.welford_var_agg += (reward - next_mean) * (
-            reward - self.observed_reward_mean
-        )
+        self.var_agg += (reward - next_mean) * (reward - self.observed_reward_mean)
 
         self.observed_reward_mean = next_mean
 
         self.observed_reward_std = np.maximum(
-            np.sqrt(self.welford_var_agg / self.num_rewards_observed),
+            np.sqrt(self.var_agg / self.num_rewards_observed),
             self.min_normalization_std,
         )
 
     def observe_reward_vec(self, rewards):
-        self.num_rewards_observed += np.prod(rewards.shape)
+        n1 = np.prod(rewards.shape)
+        mu1 = np.mean(rewards)
+        n1S1 = np.var(rewards) * n1
 
-        next_mean = (
-            self.observed_reward_mean
-            + (rewards - self.observed_reward_mean) / self.num_rewards_observed
+        n2 = self.num_rewards_observed
+        mu2 = self.observed_reward_mean
+        n2S2 = self.var_agg
+
+        next_mean = (n1 * mu1 + n2 * mu2) / (n1 + n2)
+
+        self.var_agg = (
+            n1S1 + n2S2 + n1 * (mu1 - next_mean) ** 2 + n2 * (mu2 - next_mean) ** 2
         )
 
-        self.welford_var_agg += np.sum(
-            (rewards - next_mean) * (rewards - self.observed_reward_mean)
-        )
+        self.num_rewards_observed = n1 + n2
 
         self.observed_reward_mean = next_mean
 
         self.observed_reward_std = np.maximum(
-            np.sqrt(self.welford_var_agg / self.num_rewards_observed),
+            np.sqrt(self.var_agg / self.num_rewards_observed),
             self.min_normalization_std,
         )

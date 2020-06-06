@@ -50,7 +50,7 @@ def controlledPendulumStep_scan(state_and_params, u):
 
 
 @jit
-def pendulumTraj_scan(th0, thdot0, uVect, params):
+def pendulumTraj_scan(th0, thdot0, uVect, params=default_pendulum_params):
     state = (th0, thdot0, params)
     _, traj = jax.lax.scan(controlledPendulumStep_scan, state, uVect)
     return traj
@@ -62,7 +62,7 @@ def costOfTrajectory(traj):
 
 
 @jit
-def pendulumTrajCost_scan(th0, thdot0, uVect, params):
+def pendulumTrajCost_scan(th0, thdot0, uVect, params=default_pendulum_params):
     traj = pendulumTraj_scan(th0, thdot0, uVect, params)
     return costOfTrajectory(traj)
 
@@ -72,7 +72,7 @@ trajectoryValAndGrad_scan = jax.jit(value_and_grad(pendulumTrajCost_scan, argnum
 
 
 @jit
-def controlledPendulumStep_derivs(th, thdot, params):
+def controlledPendulumStep_derivs(th, thdot, params=default_pendulum_params):
     d_thdot = (-3 * params.g / (2 * params.l) * np.sin(th + np.pi)) * params.dt
     newthdot = thdot + d_thdot
     d_th = newthdot * params.dt
