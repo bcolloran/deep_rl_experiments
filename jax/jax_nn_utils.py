@@ -4,8 +4,13 @@ import numpy
 from jax import grad, jit, value_and_grad
 import jax.numpy as np
 
-# from jax import random
+from jax import random
+
 # from jax.ops import index, index_add, index_update
+
+
+def randKey():
+    return random.PRNGKey(int(100000 * numpy.random.rand(1)))
 
 
 @jit
