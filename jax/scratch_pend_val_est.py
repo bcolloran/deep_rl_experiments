@@ -22,7 +22,6 @@ import jax_nn_utils as jnn
 from damped_spring_noise import dampedSpringNoiseJit
 import pendulum_utils as PU
 
-
 reload(PU)
 reload(jnn)
 get_ipython().run_line_magic("matplotlib", "inline")
@@ -181,8 +180,6 @@ for i in range(num_epochs):
 
     e = 0
     while epoch_memory.shape[0] < samples_per_epoch:
-        # print(f"episode {e} of {samples_per_epoch/episode_len};"
-        # f"   {epoch_memory.shape} samples so far", end="\r")
         e += 1
         theta0 = np.pi * (2 * rand() - 1)
         thetadot0 = 8 * (2 * rand() - 0.5)
@@ -320,83 +317,3 @@ for i in range(num_epochs):
     plotter.update_plot(jnn.predict(vn1, plotter.plotX), loss_list, i, title=title)
 
 # %%
-# %%# %%
-# NOTE now let's try to estimate the VALUE function for an agent using the policy:
-# "always take a spring-noise-random action"
-# NOTE: now trying TD(n)
-# NOTE: now trying cos,sin state representation
-
-
-episode_len = 300
-num_epochs = 10000
-episodes_per_epoch = 10
-samples_per_epoch = episode_len * episodes_per_epoch
-batch_size = 100
-update_every = 3
-
-discount = 0.99
-
-tau = 0.002
-LR_0 = 0.00001
-decay = 0.993
-
-lookahead = 4
-
-
-vn1 = jnn.init_network_params_He([3, 80, 80, 1])
-vn1_targ = jnn.copy_network(vn1)
-vn2 = jnn.init_network_params_He([3, 80, 80, 1])
-vn2_targ = jnn.copy_network(vn2)
-
-plotter = Plotter2d(jnn.predict, vn1, n_grid=100, jupyter=True, show_init_est=False)
-stdizer = jnn.RewardStandardizer()
-
-
-loss_list = []
-for i in range(num_epochs):
-    epoch_memory = None  # np.zeros((0, 4+lookahead))
-    for j in range(episodes_per_epoch):
-        episode = PU.make_n_step_sin_cos_traj_episode(
-            episode_len, lookahead, stdizer, params
-        )
-        if epoch_memory is None:
-            epoch_memory = episode
-        else:
-            epoch_memory = np.vstack([epoch_memory, episode])
-
-    sample_order = np.random.permutation(epoch_memory.shape[0])
-
-    LR = LR_0 * decay ** i
-    for j in range(int(samples_per_epoch / batch_size)):
-        sample_indices = sample_order[(j * batch_size) : ((j + 1) * batch_size)]
-
-        batch = jnp.transpose(epoch_memory[sample_indices, :])
-
-        S = batch[0:3, :]
-
-        S_lookahead = batch[3:6, :]
-
-        Y = (discount ** lookahead) * np.minimum(
-            jnn.predict(vn1_targ, S_lookahead), jnn.predict(vn2_targ, S_lookahead)
-        )
-        for t in range(lookahead - 1):
-            Y += (discount ** t) * batch[(6 + t) : (7 + t), :]
-
-        vn1, loss1 = jnn.update_and_loss(vn1, (S, Y), LR)
-        loss_list.append(loss1)
-
-        vn2, loss2 = jnn.update_and_loss(vn2, (S, Y), LR)
-
-        if (j + 1) % update_every == 0:
-            vn1_targ = jnn.interpolate_networks(vn1_targ, vn1, tau)
-            vn2_targ = jnn.interpolate_networks(vn2_targ, vn2, tau)
-
-    title = (
-        f"epoch {i}/{num_epochs};   LR={LR:.9f};   last loss {loss_list[-1]:.4f}"
-        f"\nLR_0={LR_0}, decay={decay}, lookahead={lookahead}; sin,cos verion"
-    )
-
-    plotX = np.vstack(
-        [np.cos(plotter.plotX[0, :]), np.sin(plotter.plotX[0, :]), plotter.plotX[1, :]]
-    )
-    plotter.update_plot(jnn.predict(vn1, plotX), loss_list, i, title=title)

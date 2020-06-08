@@ -337,6 +337,109 @@ class PendulumValuePlotter(object):
             display(self.fig)
 
 
+class PendulumValuePlotter2(object):
+    def __init__(
+        self, n_grid=100, jupyter=True, pend_params=default_pendulum_params,
+    ):
+        self.axes_ready = False
+        self.n_grid = n_grid
+        self.pend_params = pend_params
+        grid_pts = np.linspace(-1, 1, n_grid)
+
+        X1, X2 = np.meshgrid(np.pi * grid_pts, 8 * grid_pts)
+        X = np.vstack([X1.ravel(), X2.ravel()])
+        self.plotX1 = X1.ravel()
+        self.plotX2 = X2.ravel()
+        self.plotX = X
+
+        self.jupyter = True if jupyter else False
+
+    def reshape_imdata(self, data):
+        return data.reshape(self.n_grid, self.n_grid)
+
+    def init_axes(self, im_plots, line_plots, title):
+        self.axes_ready = True
+
+        num_plots = (len(line_plots) if line_plots is not None else 0) + (
+            len(im_plots) if im_plots is not None else 0
+        )
+
+        num_rows = int(np.ceil(num_plots / 4))
+        num_cols = int(np.floor(num_plots / num_rows))
+
+        fig, ax_table = plt.subplots(
+            num_rows, num_cols, figsize=(5 * num_cols, 5 * num_rows)
+        )
+        ax_list = [ax for row in ax_table for ax in row]
+        self.fig = fig
+        # self.axY = axY
+        self.axes = {}
+        self.images = {}
+        ax_index = 0
+
+        U, V = np.meshgrid(np.pi * np.linspace(-1, 1, 17), 8 * np.linspace(-1, 1, 17))
+        THDOT, THDOTDOT = controlledPendulumStep_derivs(
+            U.ravel(), V.ravel(), self.pend_params
+        )
+        THDOT = THDOT.reshape(U.shape)
+        THDOTDOT = THDOTDOT.reshape(U.shape)
+
+        if line_plots is not None:
+            for plot_name, plot_data in line_plots:
+                self.axes[plot_name] = ax_list[ax_index]
+                self.axes[plot_name].set_title(plot_name)
+                ax_index += 1
+
+        if im_plots is not None:
+            for plot_name, plot_data in im_plots:
+                self.axes[plot_name] = ax_list[ax_index]
+                self.axes[plot_name].set_title(plot_name)
+                ax_index += 1
+
+                self.images[plot_name] = self.axes[plot_name].imshow(
+                    self.reshape_imdata(plot_data),
+                    origin="lower",
+                    cmap="PiYG",
+                    alpha=0.9,
+                    extent=(-np.pi, np.pi, -8, 8),
+                    aspect=0.5,
+                )
+                self.axes[plot_name].set_title(plot_name)
+                self.fig.colorbar(self.images[plot_name], ax=self.axes[plot_name])
+                self.axes[plot_name].quiver(U, V, THDOT, THDOTDOT, pivot="mid")
+
+        if title is not None:
+            self.fig.suptitle(title, fontsize=14)
+
+    def update_plot(self, im_plots=None, line_plots=None, title=None):
+        if not self.axes_ready:
+            self.init_axes(im_plots, line_plots, title)
+
+        if title is not None:
+            self.fig.suptitle(title, fontsize=14)
+
+        if im_plots is not None:
+            for plot_name, plot_data in im_plots:
+                self.images[plot_name].set_data(self.reshape_imdata(plot_data))
+                self.images[plot_name].set_clim(
+                    vmin=plot_data.min(), vmax=plot_data.max()
+                )
+        if line_plots is not None:
+            for plot_name, plot_data in line_plots:
+                self.axes[plot_name].clear()
+                for line_name, line_data in plot_data:
+                    self.axes[plot_name].plot(line_data)
+                self.axes[plot_name].set_yscale("log")
+                self.axes[plot_name].set_title(plot_name)
+
+        plt.draw()
+
+        if self.jupyter:
+            # plt.show()
+            clear_output(wait=True)
+            display(self.fig)
+
+
 def pendulum_traj_animation(traj, uVect, th0):
     fig, ax = plt.subplots()
 
