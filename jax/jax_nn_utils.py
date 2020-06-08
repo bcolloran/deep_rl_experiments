@@ -266,6 +266,7 @@ def update_adam(params, data, ms, vs, t, LR, beta1=0.9, beta2=0.99, eps=1e-8):
         for (v_w, v_b), (dw, db) in zip(vs, grads)
     ]
 
+    # NOTE what the heck is this"t=t+1"? dbl check source material
     t = t + 1
     # param_updates = [
     #     (
