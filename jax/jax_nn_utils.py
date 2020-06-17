@@ -172,6 +172,16 @@ def update_and_loss(params, data, LR):
 
 
 @jit
+def update_with_loss_and_norm_grad(params, data, LR):
+    value, grads = value_and_grad(loss)(params, data)
+    return (
+        [(w - LR * dw, b - LR * db) for (w, b), (dw, db) in zip(params, grads)],
+        value,
+        [(np.linalg.norm(dw), np.linalg.norm(db)) for (dw, db) in grads],
+    )
+
+
+@jit
 def update_normalize_grad(params, data, LR):
     grads = grad(loss)(params, data)
     return [

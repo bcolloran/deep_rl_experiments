@@ -148,23 +148,34 @@ class PendulumValuePlotter2(object):
     def reshape_imdata(self, data):
         return data.reshape(self.n_grid, self.n_grid)
 
-    def init_axes(self, im_plots, line_plots, title):
+    def init_axes(self, im_plots, line_plots, traj_plots, title):
         self.axes_ready = True
 
-        num_plots = (len(line_plots) if line_plots is not None else 0) + (
-            len(im_plots) if im_plots is not None else 0
+        num_plots = (
+            (len(line_plots) if line_plots is not None else 0)
+            + (len(im_plots) if im_plots is not None else 0)
+            + (len(traj_plots) if traj_plots is not None else 0)
         )
 
-        num_rows = int(np.ceil(num_plots / 4))
+        MAX_NUM_COLUMNS = 4
+        num_rows = int(np.ceil(num_plots / MAX_NUM_COLUMNS))
         num_cols = int(np.ceil(num_plots / num_rows))
 
         fig, ax_table = plt.subplots(
             num_rows, num_cols, figsize=(5 * num_cols, 5 * num_rows)
         )
-        ax_list = [ax for row in ax_table for ax in row]
+        try:
+
+            if len(ax_table.shape) == 2:
+                ax_list = [ax for row in ax_table for ax in row]
+            if len(ax_table.shape) == 1:
+                ax_list = [ax for ax in ax_table]
+        except AttributeError:
+            ax_list = [ax_table]
         self.fig = fig
         # self.axY = axY
         self.axes = {}
+        self.axes_lines = {}
         self.images = {}
         ax_index = 0
 
@@ -176,36 +187,76 @@ class PendulumValuePlotter2(object):
         THDOTDOT = THDOTDOT.reshape(U.shape)
 
         if line_plots is not None:
-            for plot_name, plot_data in line_plots:
-                self.axes[plot_name] = ax_list[ax_index]
-                self.axes[plot_name].set_title(plot_name)
+            for plot_info in line_plots:
+                plot_name, plot_data = plot_info[0], plot_info[1]
+                plot_kwargs = None
+                if len(plot_info) == 3:
+                    plot_kwargs = plot_info[2]
+                ax = ax_list[ax_index]
                 ax_index += 1
+                self.axes[plot_name] = ax
+                self.axes_lines[plot_name] = {}
+                ax.set_title(plot_name)
+                for line_name, line_data in plot_data:
+                    self.axes_lines[plot_name][line_name] = ax.plot(
+                        line_data, label=line_name
+                    )[0]
+                box = ax.get_position()
+                if len(plot_data) < 5:
+                    # legend on bottom
+                    ax.set_position(
+                        [box.x0, box.y0 + box.height * 0.1, box.width, box.height * 0.9]
+                    )
+                    ax.legend(
+                        loc="upper center", bbox_to_anchor=(0.5, -0.05), ncol=5,
+                    )
+                else:
+                    # Put a legend to the right of the current axis
+                    ax.set_position([box.x0, box.y0, box.width * 0.6, box.height])
+                    ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+
+                if plot_kwargs is not None and "yscale" in plot_kwargs:
+                    ax.set_yscale(plot_kwargs["yscale"])
+                else:
+                    ax.set_yscale("log")
+                ax.set_title(plot_name)
 
         if im_plots is not None:
             for plot_name, plot_data in im_plots:
-
                 self.axes[plot_name] = ax_list[ax_index]
-                self.axes[plot_name].set_title(plot_name)
                 ax_index += 1
+                self.axes[plot_name].set_title(plot_name)
 
                 self.images[plot_name] = self.axes[plot_name].imshow(
                     self.reshape_imdata(plot_data),
                     origin="lower",
-                    cmap="PiYG",
+                    cmap="magma",
                     alpha=0.9,
                     extent=(-np.pi, np.pi, -8, 8),
                     aspect=0.5,
                 )
-                self.axes[plot_name].set_title(plot_name)
                 self.fig.colorbar(self.images[plot_name], ax=self.axes[plot_name])
                 self.axes[plot_name].quiver(U, V, THDOT, THDOTDOT, pivot="mid")
+
+        if traj_plots is not None:
+            for plot_name, plot_data in traj_plots:
+                ax = ax_list[ax_index]
+                self.axes[plot_name] = ax
+                ax_index += 1
+                ax.set_title(plot_name)
+                ax.quiver(U, V, THDOT, THDOTDOT, pivot="mid")
+                self.axes_lines[plot_name] = {}
+                for line_name, line_x, line_y in plot_data:
+                    self.axes_lines[plot_name][line_name] = ax.plot(
+                        line_x, line_y, marker=".", label=line_name
+                    )[0]
 
         if title is not None:
             self.fig.suptitle(title, fontsize=14)
 
-    def update_plot(self, im_plots=None, line_plots=None, title=None):
+    def update_plot(self, im_plots=None, line_plots=None, traj_plots=None, title=None):
         if not self.axes_ready:
-            self.init_axes(im_plots, line_plots, title)
+            self.init_axes(im_plots, line_plots, traj_plots, title)
 
         if title is not None:
             self.fig.suptitle(title, fontsize=14)
@@ -217,19 +268,43 @@ class PendulumValuePlotter2(object):
                     vmin=plot_data.min(), vmax=plot_data.max()
                 )
         if line_plots is not None:
-            for plot_name, plot_data in line_plots:
-                self.axes[plot_name].clear()
+            for plot_info in line_plots:
+                plot_name, plot_data = plot_info[0], plot_info[1]
                 for line_name, line_data in plot_data:
-                    self.axes[plot_name].plot(line_data)
-                self.axes[plot_name].set_yscale("log")
-                self.axes[plot_name].set_title(plot_name)
+                    self.axes_lines[plot_name][line_name].set_data(
+                        range(len(line_data)), line_data
+                    )
+                self.axes[plot_name].relim()
+                self.axes[plot_name].autoscale_view()
+
+        if traj_plots is not None:
+            for plot_name, plot_data in traj_plots:
+                for line_name, line_x, line_y in plot_data:
+                    line_x, line_y = process_X_wrapping_series(line_x, line_y)
+                    self.axes_lines[plot_name][line_name].set_data(line_x, line_y)
+                # self.axes[plot_name].autoscale_view()
 
         plt.draw()
 
         if self.jupyter:
-            # plt.show()
             clear_output(wait=True)
             display(self.fig)
+
+
+def process_X_wrapping_series(xs, ys, eps=0.5):
+    xs2 = []
+    ys2 = []
+    for i, x in enumerate(xs):
+        if i == 0:
+            xs2.append(x)
+            ys2.append(ys[i])
+            continue
+        if abs(x - xs[i - 1]) > eps:
+            xs2.append(np.nan)
+            ys2.append(np.nan)
+        xs2.append(x)
+        ys2.append(ys[i])
+    return xs2, ys2
 
 
 def pendulum_traj_animation(traj, uVect, th0):
