@@ -23,13 +23,13 @@ ac, step_log, episode_log = sac(
     start_steps=20000,
     steps_per_epoch=10000,
     epochs=300,
-    use_logger=False,
+    # use_logger=False,
     update_every=50,
     # alpha=.5,
     batch_size=256,
     lr=0.0001,
     device=device,
-    st_plot=st_plot.pyplot,
+    # st_plot=st_plot.pyplot,
 )
 
 # plt.show()
