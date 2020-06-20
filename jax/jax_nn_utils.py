@@ -9,8 +9,8 @@ from jax import random
 # from jax.ops import index, index_add, index_update
 
 
-def randKey():
-    return random.PRNGKey(int(100000 * numpy.random.rand(1)))
+def randKey(seed=numpy.random.rand(1)):
+    return random.PRNGKey(int(100000 * seed))
 
 
 @jit
@@ -151,15 +151,6 @@ def loss(params, data):
 def update(params, data, LR):
     grads = grad(loss)(params, data)
     return [(w - LR * dw, b - LR * db) for (w, b), (dw, db) in zip(params, grads)]
-
-
-@jit
-def update_value_TD0(V_params, R, S, S_next, discount, LR):
-    grads = grad(predict)(V_params, S)
-    TDerr = LR * (R + discount * predict(V_params, S_next) - predict(V_params, S))
-    return [
-        (w - TDerr * dw, b - TDerr * db) for (w, b), (dw, db) in zip(V_params, grads)
-    ]
 
 
 @jit

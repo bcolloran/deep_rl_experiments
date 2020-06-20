@@ -92,7 +92,7 @@ class RrtNode:
 #         pass
 
 
-class Tree2:
+class Tree:
     def __init__(self, root_node_data):
         self.node_id_num = 0
         self.root_id = self.node_id_num
@@ -186,7 +186,7 @@ nodeData = namedtuple("NodeData", ["state"])
 
 class RRT:
     def __init__(self, root_node, step_fn=None, step_radius=1, distance_fn=None):
-        self.T = Tree2(root_node)
+        self.T = Tree(root_node)
         if distance_fn is None:
             # use euclidean dist
             def distance_fn(a, b):
@@ -227,7 +227,7 @@ class RRTstar:
         self, root_node, node_tup_fun, step_fn=None, step_radius=1, distance_fn=None
     ):
         self.node_tup_fun = node_tup_fun
-        self.T = Tree2(root_node)
+        self.T = Tree(root_node)
         if distance_fn is None:
             # use euclidean dist
             def distance_fn(a, b):

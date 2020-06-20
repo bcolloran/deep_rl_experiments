@@ -19,7 +19,7 @@ from IPython import get_ipython
 from importlib import reload
 
 import jax_nn_utils as jnn
-from damped_spring_noise import dampedSpringNoiseJit
+from damped_spring_noise import dampedSpringNoise
 import pendulum_utils as PU
 
 reload(PU)
@@ -38,7 +38,7 @@ traj = PU.pendulumTraj_scan(
     np.pi * (2 * rand() - 1),
     8 * (2 * rand() - 0.5),
     np.clip(
-        dampedSpringNoiseJit(100, key=randKey()), -params.max_torque, params.max_torque
+        dampedSpringNoise(100, key=randKey()), -params.max_torque, params.max_torque
     ),
     params,
 )
@@ -120,7 +120,7 @@ for i in range(num_epochs):
                 np.pi * (2 * rand() - 1),
                 8 * (2 * rand() - 0.5),
                 np.clip(
-                    dampedSpringNoiseJit(T, key=randKey()),
+                    dampedSpringNoise(T, key=randKey()),
                     -params.max_torque,
                     params.max_torque,
                 ),
@@ -188,7 +188,7 @@ for i in range(num_epochs):
                 theta0,
                 thetadot0,
                 np.clip(
-                    dampedSpringNoiseJit(episode_len, key=randKey()),
+                    dampedSpringNoise(episode_len, key=randKey()),
                     -params.max_torque,
                     params.max_torque,
                 ),
