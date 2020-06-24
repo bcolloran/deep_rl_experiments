@@ -4,37 +4,81 @@ from numpy.random import rand
 
 import jax
 from jax import grad, value_and_grad, random, jit
-import jax.numpy as np
+import jax.numpy as jnp
 
 # from jax.ops import index, index_add, index_update
 
-import damped_spring_noise
+# from damped_spring_noise import dampedSpringNoise
+import damped_spring_noise as dsn
 
 import jax_nn_utils as jnn
 from jax_nn_utils import randKey
+
+dampedSpringNoise = dsn.dampedSpringNoise
 
 PendulumParams = namedtuple("Params", ["g", "m", "l", "dt", "max_torque", "max_speed"])
 
 default_pendulum_params = PendulumParams(10, 1, 1, 0.05, 2, 8)
 
-dampedSpringNoiseJit = damped_spring_noise.dampedSpringNoiseJit
+
+def random_initial_state(params=default_pendulum_params):
+    th = jnp.pi * (2 * rand() - 1)
+    thdot = 8 * (2 * rand() - 1)
+    return jnp.array([th, thdot])
+
+
+# @jit
+# def expand_state_cos_sin(S):
+#     th = S[:, 0]
+#     thdot = S[:, 1]
+#     return jnp.hstack([jnp.cos(th), jnp.sin(th), thdot,])
+
+
+# @jit
+def expand_state_cos_sin(S):
+    th, thdot = S
+    S_new = jnp.array([jnp.cos(th), jnp.sin(th), thdot])
+    return S_new
 
 
 @jit
 def angle_normalize(x):
-    return ((x + np.pi) % (2 * np.pi)) - np.pi
+    return ((x + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+
+
+@jit
+def pendulum_step(state, u, params):
+    th, thdot = state
+
+    u = jnp.clip(u, -params.max_torque, params.max_torque)
+
+    thdot = jnp.clip(
+        thdot
+        + (
+            -3.0 * params.g / (2 * params.l) * jnp.sin(th + jnp.pi)
+            + 3.0 / (params.m * params.l ** 2) * u
+        )
+        * params.dt,
+        -params.max_speed,
+        params.max_speed,
+    )
+    th = angle_normalize(th + thdot * params.dt)
+
+    cost = th ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
+
+    return jnp.array((th, thdot)).flatten(), -cost
 
 
 @jit
 def controlledPendulumStep(state_and_params, u):
     th, thdot, params = state_and_params
 
-    u = np.clip(u, -params.max_torque, params.max_torque)
+    u = jnp.clip(u, -params.max_torque, params.max_torque)
 
-    thdot = np.clip(
+    thdot = jnp.clip(
         thdot
         + (
-            -3.0 * params.g / (2 * params.l) * np.sin(th + np.pi)
+            -3.0 * params.g / (2 * params.l) * jnp.sin(th + jnp.pi)
             + 3.0 / (params.m * params.l ** 2) * u
         )
         * params.dt,
@@ -45,28 +89,28 @@ def controlledPendulumStep(state_and_params, u):
 
     cost = angle_normalize(th) ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
 
-    return np.array((th, thdot, cost))
+    return jnp.array((th, thdot, cost))
 
 
 @jit
 def controlledPendulumStep_derivs(th, thdot, params=default_pendulum_params):
-    d_thdot = (-3 * params.g / (2 * params.l) * np.sin(th + np.pi)) * params.dt
+    d_thdot = (-3 * params.g / (2 * params.l) * jnp.sin(th + jnp.pi)) * params.dt
     newthdot = thdot + d_thdot
     d_th = newthdot * params.dt
 
-    return np.array((d_th, d_thdot))
+    return jnp.array((d_th, d_thdot))
 
 
 @jit
 def controlledPendulumStep_scan(state_and_params, u):
     th, thdot, params = state_and_params
 
-    u = np.clip(u, -params.max_torque, params.max_torque)
+    u = jnp.clip(u, -params.max_torque, params.max_torque)
 
-    thdot = np.clip(
+    thdot = jnp.clip(
         thdot
         + (
-            -3.0 * params.g / (2 * params.l) * np.sin(th + np.pi)
+            -3.0 * params.g / (2 * params.l) * jnp.sin(th + jnp.pi)
             + 3.0 / (params.m * params.l ** 2) * u
         )
         * params.dt,
@@ -76,9 +120,8 @@ def controlledPendulumStep_scan(state_and_params, u):
     th = th + thdot * params.dt
 
     cost = angle_normalize(th) ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
-    # newthdot = newthdot, -max_speed, max_speed)
 
-    return (th, thdot, params), np.array((th, thdot, cost))
+    return (th, thdot, params), jnp.array((th, thdot, cost))
 
 
 @jit
@@ -88,21 +131,31 @@ def pendulumTraj_scan(th0, thdot0, uVect, params=default_pendulum_params):
     return traj
 
 
-U_opts = np.linspace(
+def make_random_episode(episode_len, params=default_pendulum_params, key=randKey()):
+    theta0 = jnp.pi * (2 * rand() - 1)
+    thetadot0 = 8 * (2 * rand() - 1)
+    A = dampedSpringNoise(episode_len, key=randKey())
+
+    traj = pendulumTraj_scan(theta0, thetadot0, A, params)
+
+    S_th = angle_normalize(traj[:, 0:1])
+    S_thdot = traj[:, 1:2]
+    S = jnp.hstack([jnp.cos(S_th), jnp.sin(S_th), S_thdot])
+
+    R = traj[:, 2:3]
+
+    return (S, A.reshape(-1, 1), R)
+
+
+U_opts = jnp.linspace(
     -default_pendulum_params.max_torque, default_pendulum_params.max_torque, 11
 )
-state_action_template = np.vstack(
-    [np.ones_like(U_opts), np.ones_like(U_opts), np.ones_like(U_opts), U_opts]
+state_action_template = jnp.vstack(
+    [jnp.ones_like(U_opts), jnp.ones_like(U_opts), jnp.ones_like(U_opts), U_opts]
 )
 
 
-# @jit
-# def ddqnBestAction(val_est_randkey):
-#     (val_est, randkey) = val_est_randkey
-#     # NOTE: we use argMIN here since everything is framed as cost not reward
-#     # Note also that this does not need to be clipped; all the opts are in
-#     # the right range
-#     return U_opts[np.argmin(val_est)]
+###### DDQN
 
 
 @jit
@@ -115,12 +168,12 @@ def ddqnRandomAction(cond_args):
 @jit
 def ddqnBestAction(Q1, cos_th, sin_th, thdot):
     # (val_est, randkey) = val_est_randkey
-    s_a = state_action_template * np.array([[cos_th, sin_th, thdot, 1]]).T
+    s_a = state_action_template * jnp.array([[cos_th, sin_th, thdot, 1]]).T
     val_ests = jnn.predict(Q1, s_a)
     # NOTE: we use argMIN here since everything is framed as cost not reward
     # Note also that this does not need to be clipped; all the opts are in
     # the right range
-    return U_opts[np.argmin(val_ests)]
+    return U_opts[jnp.argmin(val_ests)]
 
 
 ddqnBestActionsVect = jax.vmap(ddqnBestAction, (None, 0, 0, 0), (0))
@@ -135,9 +188,6 @@ def ddqnBestAction_wrap(cond_args):
 @jit
 def controlledPendulumStepDDQN(state_and_params, __ignore):
     th, thdot, params, Q1, eps, key = state_and_params
-    # s_a = state_action_template * np.array([[np.cos(th), np.sin(th), thdot, 1]]).T
-
-    # val_ests = jnn.predict(Q1, s_a)
 
     key, subkey = random.split(key)
 
@@ -145,12 +195,12 @@ def controlledPendulumStepDDQN(state_and_params, __ignore):
         random.uniform(subkey) > eps,
         ddqnBestAction_wrap,
         ddqnRandomAction,
-        (Q1, np.cos(th), np.sin(th), thdot, key),
+        (Q1, jnp.cos(th), jnp.sin(th), thdot, key),
     )
-    thdot = np.clip(
+    thdot = jnp.clip(
         thdot
         + (
-            -3.0 * params.g / (2 * params.l) * np.sin(th + np.pi)
+            -3.0 * params.g / (2 * params.l) * jnp.sin(th + jnp.pi)
             + 3.0 / (params.m * params.l ** 2) * u
         )
         * params.dt,
@@ -161,7 +211,7 @@ def controlledPendulumStepDDQN(state_and_params, __ignore):
 
     cost = angle_normalize(th) ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
 
-    return (th, thdot, params, Q1, eps, key), np.array((u, cost, th, thdot))
+    return (th, thdot, params, Q1, eps, key), jnp.array((u, cost, th, thdot))
 
 
 # @jit
@@ -169,10 +219,13 @@ def pendulumTrajDDQN(th0, thdot0, T, Q1, eps, params=default_pendulum_params):
     key = randKey()
     state = (th0, thdot0, params, Q1, eps, key)
     _, u_cost_sNext = jax.lax.scan(controlledPendulumStepDDQN, state, None, length=T)
-    S = np.vstack([np.array([th0, thdot0]), u_cost_sNext[:-1, 2:4]])
+    S = jnp.vstack([jnp.array([th0, thdot0]), u_cost_sNext[:-1, 2:4]])
     A = u_cost_sNext[:, 0]
     Cost = u_cost_sNext[:, 1]
-    return (np.transpose(S), np.transpose(A), np.transpose(Cost))
+    return (jnp.transpose(S), jnp.transpose(A), jnp.transpose(Cost))
+
+
+###### END DDQN
 
 
 def cost_of_state(th, thdot, params, u=None):
@@ -183,7 +236,7 @@ def cost_of_state(th, thdot, params, u=None):
 
 @jit
 def costOfTrajectory(traj):
-    return np.sum(traj[:, 2])
+    return jnp.sum(traj[:, 2])
 
 
 @jit
@@ -199,14 +252,14 @@ trajectoryValAndGrad_scan = jax.jit(value_and_grad(pendulumTrajCost_scan, argnum
 def make_n_step_traj_episode(
     episode_len, n, stdizer, params,
 ):
-    theta0 = np.pi * (2 * rand() - 1)
+    theta0 = jnp.pi * (2 * rand() - 1)
     thetadot0 = 8 * (2 * rand() - 0.5)
-    traj = np.array(
+    traj = jnp.array(
         pendulumTraj_scan(
             theta0,
             thetadot0,
-            np.clip(
-                dampedSpringNoiseJit(episode_len + n, key=randKey()),
+            jnp.clip(
+                dampedSpringNoise(episode_len + n, key=randKey()),
                 -params.max_torque,
                 params.max_torque,
             ),
@@ -218,7 +271,7 @@ def make_n_step_traj_episode(
 
     stdizer.observe_reward_vec(traj[:, 2])
 
-    R = np.hstack(
+    R = jnp.hstack(
         [
             stdizer.standardize_reward(traj[m : -(n - m), 2]).reshape(-1, 1)
             for m in range(n)
@@ -226,19 +279,19 @@ def make_n_step_traj_episode(
     )
     S_n_th = angle_normalize(traj[n:, 0:1])
     S_n_thdot = traj[n:, 1:2]
-    episode = np.hstack([S_th, S_thdot, S_n_th, S_n_thdot, R,])
+    episode = jnp.hstack([S_th, S_thdot, S_n_th, S_n_thdot, R,])
     return episode
 
 
 def make_n_step_sin_cos_traj_episode(episode_len, n, stdizer, params, key=randKey()):
-    theta0 = np.pi * (2 * rand() - 1)
+    theta0 = jnp.pi * (2 * rand() - 1)
     thetadot0 = 8 * (2 * rand() - 0.5)
-    traj = np.array(
+    traj = jnp.array(
         pendulumTraj_scan(
             theta0,
             thetadot0,
-            np.clip(
-                dampedSpringNoiseJit(episode_len + n, key=randKey()),
+            jnp.clip(
+                dampedSpringNoise(episode_len + n, key=randKey()),
                 -params.max_torque,
                 params.max_torque,
             ),
@@ -249,7 +302,7 @@ def make_n_step_sin_cos_traj_episode(episode_len, n, stdizer, params, key=randKe
 
     S_th = angle_normalize(traj[0:-n, 0:1])
     S_thdot = traj[0:-n, 1:2]
-    R = np.hstack(
+    R = jnp.hstack(
         [
             stdizer.standardize_reward(traj[m : -(n - m), 2]).reshape(-1, 1)
             for m in range(n)
@@ -258,13 +311,13 @@ def make_n_step_sin_cos_traj_episode(episode_len, n, stdizer, params, key=randKe
     S_n_th = angle_normalize(traj[n:, 0:1])
     S_n_thdot = traj[n:, 1:2]
 
-    episode = np.hstack(
+    episode = jnp.hstack(
         [
-            np.cos(S_th),
-            np.sin(S_th),
+            jnp.cos(S_th),
+            jnp.sin(S_th),
             S_thdot,
-            np.cos(S_n_th),
-            np.sin(S_n_th),
+            jnp.cos(S_n_th),
+            jnp.sin(S_n_th),
             S_n_thdot,
             R,
         ]
@@ -273,19 +326,19 @@ def make_n_step_sin_cos_traj_episode(episode_len, n, stdizer, params, key=randKe
 
 
 def make_n_step_sarsa_episode(episode_len, n, stdizer, params, key=randKey()):
-    theta0 = np.pi * (2 * rand() - 1)
+    theta0 = jnp.pi * (2 * rand() - 1)
     thetadot0 = 8 * (2 * rand() - 0.5)
-    u = np.clip(
-        dampedSpringNoiseJit(episode_len + n, key=randKey()),
+    u = jnp.clip(
+        dampedSpringNoise(episode_len + n, key=randKey()),
         -params.max_torque,
         params.max_torque,
     )
-    traj = np.array(pendulumTraj_scan(theta0, thetadot0, u, params,))
+    traj = jnp.array(pendulumTraj_scan(theta0, thetadot0, u, params,))
     stdizer.observe_reward_vec(traj[:, 2])
 
     S_th = angle_normalize(traj[0:-n, 0:1])
     S_thdot = traj[0:-n, 1:2]
-    R = np.hstack(
+    R = jnp.hstack(
         [
             stdizer.standardize_reward(traj[m : -(n - m), 2]).reshape(-1, 1)
             for m in range(n)
@@ -294,14 +347,14 @@ def make_n_step_sarsa_episode(episode_len, n, stdizer, params, key=randKey()):
     S_n_th = angle_normalize(traj[n:, 0:1])
     S_n_thdot = traj[n:, 1:2]
 
-    episode = np.hstack(
+    episode = jnp.hstack(
         [
-            np.cos(S_th),
-            np.sin(S_th),
+            jnp.cos(S_th),
+            jnp.sin(S_th),
             S_thdot,
             u[:-n].reshape(-1, 1),
-            np.cos(S_n_th),
-            np.sin(S_n_th),
+            jnp.cos(S_n_th),
+            jnp.sin(S_n_th),
             S_n_thdot,
             u[n:].reshape(-1, 1),
             R,
@@ -321,16 +374,16 @@ def make_n_step_data_from_DDQN(S, A, C, n, stdizer, params, key=randKey()):
     A_n = A[n:]
 
     stdizer.observe_reward_vec(C)
-    R = np.vstack([stdizer.standardize_reward(C[m : -(n - m)]) for m in range(n)])
+    R = jnp.vstack([stdizer.standardize_reward(C[m : -(n - m)]) for m in range(n)])
 
-    episode = np.vstack(
+    episode = jnp.vstack(
         [
-            np.cos(S_0_th),
-            np.sin(S_0_th),
+            jnp.cos(S_0_th),
+            jnp.sin(S_0_th),
             S_0_thdot,
             A_0,
-            np.cos(S_n_th),
-            np.sin(S_n_th),
+            jnp.cos(S_n_th),
+            jnp.sin(S_n_th),
             S_n_thdot,
             A_n,
             R,
@@ -349,8 +402,8 @@ def get_best_random_control(best_so_far, th, thdot, params, random_starts, horiz
     for j in range(random_starts):
         # uVect = 2*numpy.random.randn(T-t)
         key = random.PRNGKey(int(numpy.random.rand(1) * 1000000))
-        uVect = np.clip(
-            dampedSpringNoiseJit(horizon, sigma=0.2, theta=0.005, phi=0.2, key=key),
+        uVect = jnp.clip(
+            dampedSpringNoise(horizon, sigma=0.2, theta=0.005, phi=0.2, key=key),
             -params.max_torque,
             params.max_torque,
         )
@@ -368,7 +421,7 @@ def optimize_control(best_so_far, th, thdot, params, opt_iters, LR):
     uVect = best_u
     for i in range(opt_iters):
         dgdu = trajectoryGrad_scan(th, thdot, uVect, params)
-        uVect = uVect - LR * (0.99 ** i) * dgdu / np.linalg.norm(dgdu)
+        uVect = uVect - LR * (0.99 ** i) * dgdu / jnp.linalg.norm(dgdu)
         traj = pendulumTraj_scan(th, thdot, uVect, params)
         traj_cost = costOfTrajectory(traj)
         if traj_cost < best_traj_cost:

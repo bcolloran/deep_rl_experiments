@@ -138,10 +138,10 @@ class PendulumValuePlotter2(object):
         grid_pts = np.linspace(-1, 1, n_grid)
 
         X1, X2 = np.meshgrid(np.pi * grid_pts, 8 * grid_pts)
-        X = np.vstack([X1.ravel(), X2.ravel()])
+
         self.plotX1 = X1.ravel()
         self.plotX2 = X2.ravel()
-        self.plotX = X
+        self.plotX = np.vstack([self.plotX1, self.plotX2])
 
         self.jupyter = True if jupyter else False
 

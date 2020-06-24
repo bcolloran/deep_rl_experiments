@@ -2,7 +2,7 @@ import numpy
 
 # import jax
 from jax import grad, jit, value_and_grad
-import jax.numpy as np
+import jax.numpy as jnp
 
 from jax import random
 
@@ -15,12 +15,12 @@ def randKey(seed=numpy.random.rand(1)):
 
 @jit
 def relu(x):
-    return np.maximum(0, x)
+    return jnp.maximum(0, x)
 
 
 @jit
 def softmax(x):
-    e_x = np.exp(x - np.max(x))
+    e_x = jnp.exp(x - jnp.max(x))
     return e_x / e_x.sum()
 
 
@@ -40,7 +40,7 @@ def softmax_sample_jit(x, eps):
 
 @jit
 def normalize(x):
-    return x / np.linalg.norm(x)
+    return x / jnp.linalg.norm(x)
 
 
 def alternate(N, a, b):
@@ -135,16 +135,16 @@ def interpolate_networks(params_current, params_goal, tau):
 def predict(params, x):
     # per-example predictions
     for w, b in params[:-1]:
-        # x = relu(np.dot(w, x) + b)
+        # x = relu(jnp.dot(w, x) + b)
         x = relu(w @ x + b)
     w, b = params[-1]
-    return np.dot(w, x) + b
+    return jnp.dot(w, x) + b
 
 
 @jit
 def loss(params, data):
     X, Y = data
-    return np.mean((Y - predict(params, X)) ** 2)
+    return jnp.mean((Y - predict(params, X)) ** 2)
 
 
 @jit
@@ -168,7 +168,7 @@ def update_with_loss_and_norm_grad(params, data, LR):
     return (
         [(w - LR * dw, b - LR * db) for (w, b), (dw, db) in zip(params, grads)],
         value,
-        [(np.linalg.norm(dw), np.linalg.norm(db)) for (dw, db) in grads],
+        [(jnp.linalg.norm(dw), jnp.linalg.norm(db)) for (dw, db) in grads],
     )
 
 
@@ -232,7 +232,7 @@ def fit_model_to_target_fn(
 
         l = loss(params, data).item()
         loss_list.append(l)
-        if np.isnan(l):
+        if jnp.isnan(l):
             print("loss is nan")
             break
 
@@ -271,8 +271,8 @@ def update_adam(params, data, ms, vs, t, LR, beta1=0.9, beta2=0.99, eps=1e-8):
     t = t + 1
     # param_updates = [
     #     (
-    #         LR * (m_w / (1 - beta1 ** t) / (v_w / (np.sqrt(1 - beta2 ** t) + eps))),
-    #         LR * (m_b / (1 - beta1 ** t) / (v_b / (np.sqrt(1 - beta2 ** t) + eps))),
+    #         LR * (m_w / (1 - beta1 ** t) / (v_w / (jnp.sqrt(1 - beta2 ** t) + eps))),
+    #         LR * (m_b / (1 - beta1 ** t) / (v_b / (jnp.sqrt(1 - beta2 ** t) + eps))),
     #     )
     #     for (m_w, m_b), (v_w, v_b) in zip(ms, vs)
     # ]
@@ -283,22 +283,25 @@ def update_adam(params, data, ms, vs, t, LR, beta1=0.9, beta2=0.99, eps=1e-8):
     vHats = [(v_w / (1 - beta2 ** t), v_b / (1 - beta2 ** t)) for (v_w, v_b) in vs]
 
     param_updates = [
-        (LR * mHat_w / (np.sqrt(vHat_w) + eps), LR * mHat_b / (np.sqrt(vHat_b) + eps),)
+        (
+            LR * mHat_w / (jnp.sqrt(vHat_w) + eps),
+            LR * mHat_b / (jnp.sqrt(vHat_b) + eps),
+        )
         for (mHat_w, mHat_b), (vHat_w, vHat_b) in zip(mHats, vHats)
     ]
 
     # for (w_pu, b_pu) in param_updates:
-    #     if np.sum(w_pu ** 2) == 0:
-    #         print("np.sum(w_pu**2)==0")
+    #     if jnp.sum(w_pu ** 2) == 0:
+    #         print("jnp.sum(w_pu**2)==0")
 
-    #     if np.sum(b_pu ** 2) == 0:
-    #         print("np.sum(b_pu**2)==0")
+    #     if jnp.sum(b_pu ** 2) == 0:
+    #         print("jnp.sum(b_pu**2)==0")
 
-    #     if numpy.isnan(np.sum(w_pu ** 2)):
+    #     if numpy.isnan(jnp.sum(w_pu ** 2)):
     #         print("numpy.isnan(ip.sum(w_pu**2)")
 
-    #     if numpy.isnan(np.sum(b_pu ** 2)):
-    #         print("numpy.isnan(np.sum(b_pu**2)")
+    #     if numpy.isnan(jnp.sum(b_pu ** 2)):
+    #         print("numpy.isnan(jnp.sum(b_pu**2)")
     # vHatss = [
     #     (beta2 * v_w + (1 - beta2) * dw ** 2, beta2 * v_b + (1 - beta2) * db ** 2)
     #     for (v_w, v_b), (dw, db) in zip(vs, grads)
@@ -343,7 +346,7 @@ def fit_model_to_target_fn_adam(
 
         l = loss(params, data).item()
         loss_list.append(l)
-        if np.isnan(l):
+        if jnp.isnan(l):
             print("loss is nan")
             break
 
@@ -415,15 +418,15 @@ class RewardStandardizer:
 
         self.observed_reward_mean = next_mean
 
-        self.observed_reward_std = np.maximum(
-            np.sqrt(self.var_agg / self.num_rewards_observed),
+        self.observed_reward_std = jnp.maximum(
+            jnp.sqrt(self.var_agg / self.num_rewards_observed),
             self.min_normalization_std,
         )
 
     def observe_reward_vec(self, rewards):
-        n1 = np.prod(rewards.shape)
-        mu1 = np.mean(rewards)
-        n1S1 = np.var(rewards) * n1
+        n1 = jnp.prod(rewards.shape)
+        mu1 = jnp.mean(rewards)
+        n1S1 = jnp.var(rewards) * n1
 
         n2 = self.num_rewards_observed
         mu2 = self.observed_reward_mean
@@ -439,7 +442,7 @@ class RewardStandardizer:
 
         self.observed_reward_mean = next_mean
 
-        self.observed_reward_std = np.maximum(
-            np.sqrt(self.var_agg / self.num_rewards_observed),
+        self.observed_reward_std = jnp.maximum(
+            jnp.sqrt(self.var_agg / self.num_rewards_observed),
             self.min_normalization_std,
         )
