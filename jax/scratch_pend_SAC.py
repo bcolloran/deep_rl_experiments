@@ -16,7 +16,7 @@ from collections import OrderedDict as odict
 
 from jax.config import config
 
-config.update("jax_debug_nans", True)
+# config.update("jax_debug_nans", True)
 
 from IPython import get_ipython
 
@@ -47,17 +47,17 @@ params = PU.default_pendulum_params
 
 # %%
 
-episode_len = 10
-num_epochs = 3
-episodes_per_epoch = 3
-num_random_episodes = 3
+episode_len = 100
+num_epochs = 100
+episodes_per_epoch = 100
+num_random_episodes = 500
 samples_per_epoch = episode_len * episodes_per_epoch
-batch_size = 10
+batch_size = 100
 update_every = 3
 memory_size = int(1e6)
 # int(samples_per_epoch / batch_size)
 
-td_steps = 4
+td_steps = 3
 discount = 0.99
 
 agent = SAC.Agent(
@@ -79,10 +79,6 @@ agent = SAC.Agent(
 LRdecay = 0.99
 LR_0 = agent.LR
 
-dynamics_fn = jit(lambda S, A: PU.pendulum_step(S, A, params))
-policy_fn = jit(
-    lambda S, eps: SAC.action(agent.pi, PU.expand_state_cos_sin(S), eps, agent.pi_fn)
-)
 
 plotter = PP.PendulumValuePlotter2(n_grid=100, jupyter=True)
 plotX = plotter.plotX.T
@@ -90,19 +86,32 @@ L = SL.Logger()
 
 key = random.PRNGKey(seed=0)
 
+# with jax.disable_jit():
+dynamics_fn = jit(lambda S, A: PU.pendulum_step(S, A, params))
+# policy_fn = jit(
+#     lambda S, eps: SAC.action(agent.pi, PU.expand_state_cos_sin(S), eps, agent.pi_fn)
+# )
+random_policy_fn = lambda S, eps: jnp.clip(eps, -params.max_torque, params.max_torque)
+random_policy_episode_step = jtu.make_scan_policy_dynamics_noise_step_fn(
+    dynamics_fn,
+    random_policy_fn,
+    DSN.dampedSpringNoiseStep,  # agent.make_agent_act_fn(),
+)
 for i in range(num_random_episodes):
     S0 = PU.random_initial_state()
     noise0 = DSN.dampedSpringNoiseStateInit()
 
-    S, A, R = jtu.make_random_episode(
-        episode_len, dynamics_fn, DSN.dampedSpringNoiseStep, S0, noise0
+    # S, A, R = jtu.make_random_episode(
+    #     episode_len, dynamics_fn, random_policy_fn, S0, noise0
+    # )
+    S, A, R = jtu.make_agent_episode_noisy(
+        episode_len, S0, noise0, random_policy_episode_step
     )
     agent.remember_episode(S, A, R)
     key, _ = random.split(key)
     print(f"\rrandom episode {i} of {num_random_episodes}", end="\r")
 
 for i in range(num_epochs):
-
     LR = LR_0 * LRdecay ** i
     for j in range(episodes_per_epoch):
         print(
@@ -110,23 +119,37 @@ for i in range(num_epochs):
             end="\r",
         )
         key, _ = random.split(key)
-        pol_dyn_scan_fn = jtu.make_scan_policy_dynamics_noise_step_fn(
+        policy_fn = agent.make_agent_act_fn()
+        policy_episode_step = jtu.make_scan_policy_dynamics_noise_step_fn(
             dynamics_fn, policy_fn, DSN.normalStep  # agent.make_agent_act_fn(),
         )
         S0 = PU.random_initial_state()
 
-        S, A, R = jtu.make_agent_episode_noisy(episode_len, S0, key, pol_dyn_scan_fn)
+        S, A, R = jtu.make_agent_episode_noisy(
+            episode_len, S0, key, policy_episode_step
+        )
         agent.remember_episode(S, A, R)
         q_loss_val, pi_loss_val, alpha_loss_val = agent.update()
+        # q_loss_val, pi_loss_val = agent.update()
+        # q_loss_val = agent.update()
 
-        #     L.epoch_avg.obs(f"mean pred(qn*,S_n)*d^n", np.mean(Y))
-        #     L.epoch_avg.obs(f"mean Y", np.mean(Y))
-        L.epoch_avg.obs(f"mean R", np.mean(R))
-        L.epoch_avg.obs(f"mean predict(q,S,A)", np.mean(agent.predict_q(S, A)))
-        #     L.epoch_avg.obs(f"mean predict(qn2,S)", np.mean(jnn.predict(qn2, S)))
+        L.episode.obs(f"q loss", q_loss_val)
+        L.episode.obs(f"pi loss", pi_loss_val)
+        L.episode.obs(f"mean R", np.mean(R))
+        L.episode.obs(f"mean predict(q,S,A)", np.mean(agent.predict_q(S, A)))
+
+        A_pred, log_prob = agent.predict_action_and_log_prob(S, agent.new_eps(A.shape))
+        L.episode.obs(f"mean predict(q,S,A)", np.mean(agent.predict_q(S, A)))
+
         L.epoch_avg.obs(f"q loss", q_loss_val)
         L.epoch_avg.obs(f"pi loss", pi_loss_val)
         L.epoch_avg.obs(f"alpha", agent.alpha)
+
+        #     L.epoch_avg.obs(f"mean pred(qn*,S_n)*d^n", np.mean(Y))
+        #     L.epoch_avg.obs(f"mean Y", np.mean(Y))
+        # L.epoch_avg.obs(f"mean R", np.mean(R))
+        # L.epoch_avg.obs(f"mean predict(q,S,A)", np.mean(agent.predict_q(S, A)))
+        #     L.epoch_avg.obs(f"mean predict(qn2,S)", np.mean(jnn.predict(qn2, S)))
     #     for l_num, (dw, db) in enumerate(norm_grads1):
     #         L.epoch_avg.obs(f"qn1_dw{l_num}", dw)
     #         L.epoch_avg.obs(f"qn1_db{l_num}", db)
@@ -159,6 +182,14 @@ for i in range(num_epochs):
             [("reward std", L.epoch.get("stdizer reward stddev"))],
         ),
         (
+            "episode q loss",
+            [
+                ("q", L.episode.get("q loss")),
+                # ("qn2", L.epoch_avg.get("q loss2"))
+            ],
+        ),
+        ("episode pi loss", [("pi", L.episode.get("pi loss"))],),
+        (
             "epoch mean loss, q",
             [
                 ("q", L.epoch_avg.get("q loss")),
@@ -173,14 +204,14 @@ for i in range(num_epochs):
             "mean: Y, R, pred(qn1,S), pred(qn2,S)",
             [
                 # ("Y", L.epoch_avg.get("mean Y")),
-                ("R", L.epoch_avg.get("mean R")),
-                ("q_pred", L.epoch_avg.get("mean predict(q,S,A)")),
+                ("R", L.episode.get("mean R")),
+                ("q_pred", L.episode.get("mean predict(q,S,A)")),
                 # ("qn2", L.epoch_avg.get("mean predict(qn2,S)")),
                 # ("disc pred(S_n)", L.epoch_avg.get("mean pred(qn*,S_n)*d^n")),
             ],
         ),
         ("alpha", [("alpha", L.epoch_avg.get("alpha"))]),
-        ("most recent actions", [("A", A.flatten(), {"yscale": "linear"})],),
+        ("most recent actions", [("A", A.flatten())], {"yscale": "linear"}),
     ]
 
     # num_traj_to_plot = 1
@@ -196,4 +227,3 @@ for i in range(num_epochs):
 
 
 # %%
-

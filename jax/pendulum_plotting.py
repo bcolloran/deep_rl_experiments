@@ -218,7 +218,7 @@ class PendulumValuePlotter2(object):
                 if plot_kwargs is not None and "yscale" in plot_kwargs:
                     ax.set_yscale(plot_kwargs["yscale"])
                 else:
-                    ax.set_yscale("log")
+                    ax.set_yscale("symlog")
                 ax.set_title(plot_name)
 
         if im_plots is not None:
