@@ -17,7 +17,7 @@ import jax
 
 
 Noise = RT.Tensor
-PRNGKey = NewType("PRNGKey", RT.JaxArray)
+PRNGKey = NewType("PRNGKey", RT.Tensor)
 
 
 class NoiseState(NamedTuple):

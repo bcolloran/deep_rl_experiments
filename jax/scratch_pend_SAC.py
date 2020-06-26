@@ -41,7 +41,7 @@ params = PU.default_pendulum_params
 
 episode_len = 100
 num_epochs = 1000
-episodes_per_epoch = 20
+episodes_per_epoch = 200
 num_random_episodes = 500
 samples_per_epoch = episode_len * episodes_per_epoch
 batch_size = 100
@@ -123,7 +123,7 @@ for i in range(num_epochs):
         key = DSN.next_key(key)
         S, A, R = policy_episode_fn(agent.pi, key)
         agent.remember_episode(S, A, R)
-        q_loss_val, pi_loss_val, alpha_loss_val = agent.update()
+        q_loss_val, pi_loss_val, alpha_loss_val = agent.update_2()
 
         # L.episode.obs(f"q loss", q_loss_val)
         # L.episode.obs(f"pi loss", pi_loss_val)
@@ -156,9 +156,16 @@ for i in range(num_epochs):
             - agent.predict_q(plotX, -2 * np.ones((plotX.shape[0], 1))),
         )
     )
+    im_plots.append((f"pi pred", agent.predict_pi_opt(plotX)))
 
     L.end_epoch()
     L.epoch.obs("stdizer reward stddev", agent.reward_standardizer.observed_reward_std)
+
+    L.epoch.obs(
+        "approx GPU mem",
+        32
+        * sum(x.size for x in gc.get_objects() if isinstance(x, jax.xla.DeviceValue)),
+    )
 
     line_plots = [
         (
@@ -184,13 +191,27 @@ for i in range(num_epochs):
             [
                 # ("Y", L.epoch_avg.get("mean Y")),
                 ("R", L.epoch_avg.get("mean R")),
-                ("q_pred", L.epoch_avg.get("mean predict(q,S,A)")),
+                ("q(S,A)", L.epoch_avg.get("mean predict(q,S,A)")),
                 # ("qn2", L.epoch_avg.get("mean predict(qn2,S)")),
                 # ("disc pred(S_n)", L.epoch_avg.get("mean pred(qn*,S_n)*d^n")),
             ],
         ),
         ("alpha", [("alpha", L.epoch_avg.get("alpha"))]),
-        ("most recent actions", [("A", A.flatten())], {"yscale": "linear"}),
+        (
+            "most recent episode",
+            [
+                ("A", A.flatten()),
+                ("sin(S[:,0])", np.sin(S[:, 0].flatten())),
+                ("cos(S[:,0])", np.cos(S[:, 0].flatten())),
+                ("S[:,1]", S[:, 1].flatten()),
+            ],
+            {"yscale": "linear"},
+        ),
+        (
+            "approx GPU mem",
+            [("bytes", L.epoch.get("approx GPU mem"))],
+            {"yscale": "linear"},
+        ),
     ]
 
     # num_traj_to_plot = 1

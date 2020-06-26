@@ -1,24 +1,24 @@
-from typing import Callable, NewType, Any, Tuple, TypeVar, Union, Dict, Hashable
+from typing import Callable, NewType, Any, Tuple, TypeVar, Union, Dict, Hashable, Sized
+from typing_extensions import Protocol
 
 # from numpy import ndarray
 import jax.numpy as jnp
 
-# from noise_procs import Noise
 
-
-class jax_array:
+class Tensor(Sized):
     def __getitem__(self, indices) -> Any:
         ...
 
+    def __mul__(self, other: Any) -> "Tensor":
+        ...
 
-class np_array:
-    def __getitem__(self, indices) -> Any:
+    def __pow__(self, other: Any) -> "Tensor":
+        ...
+
+    def flatten(self) -> "Tensor":
         ...
 
 
-Tensor = Union[np_array, jax_array]
-
-JaxArray = NewType("JaxArray", jax_array)
 # SAR and trajectories
 State = Tensor
 Action = Tensor
@@ -29,7 +29,11 @@ SarTrajTup = Tuple[State, Action, Reward]
 
 
 NNParams = Any
-NNParamsFn = Callable[[NNParams, Tensor], Any]
+# NNParamsFn = Callable[[NNParams, Tensor, ...], Any]
+class NNParamsFn(Protocol):
+    def __call__(self, nn_params: NNParams, *args: Tensor) -> Tuple[Tensor, ...]:
+        ...
+
 
 # FUNCTIONS
 # DynamicsFn = Callable[[State, Action], Tuple[State, Reward]]

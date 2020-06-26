@@ -20,6 +20,31 @@ import typing as TT
 from collections import namedtuple
 
 
+class SAC_fns(TT.NamedTuple):
+    pi: RT.NNParamsFn
+    q: RT.NNParamsFn
+
+
+class SAC_params(TT.NamedTuple):
+    pi: RT.NNParams
+    q: RT.NNParams
+    q_targ: RT.NNParams
+    alpha: RT.Tensor
+    gamma: RT.Tensor
+    H_target: RT.Tensor
+
+
+class SAC_obs(TT.NamedTuple):
+    S: RT.Tensor
+    A: RT.Tensor
+    R: RT.Tensor
+    Sn: RT.Tensor
+    eps: RT.Tensor
+
+
+LossFn = TT.Callable[[RT.NNParams, SAC_obs, SAC_params, SAC_fns], RT.Tensor]
+
+
 def create_pi_net(
     obs_dim: int, action_dim: int, rngkey=jax.random.PRNGKey(0)
 ) -> TT.Tuple[RT.NNParams, RT.NNParamsFn]:
@@ -101,22 +126,27 @@ def action(pi, S, eps, pi_fn):
 
 
 @partial(jit, static_argnums=(3,))
-def pi_loss(pi, obs, non_grad, fns):
-    S, eps = obs
-    q, alpha = non_grad
-    pi_fn, q_fn = fns
-
+def pi_loss(
+    pi: RT.NNParams, obs: SAC_obs, non_grad: SAC_params, fns: SAC_fns
+) -> RT.Tensor:
+    S, eps = obs.S, obs.eps
     # https://arxiv.org/pdf/1812.05905.pdf eq. 7
     # TODO: add second Q function and take min! (described on p.8)
-    action, log_prob = action_with_log_prob(pi, S, eps, pi_fn)
-    return alpha * log_prob - q_fn(q, S, action)
+    action, log_prob = action_with_log_prob(pi, S, eps, fns.pi)
+    return non_grad.alpha * log_prob - fns.q(non_grad.q, S, action)
 
 
 @partial(jit, static_argnums=(3,))
-def q_loss(q, obs, non_grad, fns):
-    q_fn, pi_fn = fns
-    q_targ, pi, gamma, alpha = non_grad
-    S, S_n, R, A, eps = obs
+def q_loss(
+    q: RT.NNParams, obs: SAC_obs, non_grad: SAC_params, fns: SAC_fns
+) -> RT.Tensor:
+    q_fn, pi_fn = fns.q, fns.pi
+    q_targ = non_grad.q_targ
+    pi = non_grad.pi
+    gamma = non_grad.gamma
+    alpha = non_grad.alpha
+
+    S, S_n, R, A, eps = obs.S, obs.Sn, obs.R, obs.A, obs.eps
     # implements https://arxiv.org/pdf/1812.05905.pdf eq. 5 (substituting in 3)
     # TODO: add second Q function and take min! (described on p.8)
     current_val_est = q_fn(q, S, A)
@@ -131,22 +161,53 @@ def q_loss(q, obs, non_grad, fns):
 
 
 @partial(jit, static_argnums=(3,))
-def alpha_loss(alpha, obs, non_grad, fns):
-    S, eps = obs
-    H_target, pi = non_grad
-    pi_fn = fns
+def alpha_loss(
+    alpha: RT.NNParams, obs: SAC_obs, non_grad: SAC_params, fns: SAC_fns
+) -> RT.Tensor:
+    S, eps = obs.S, obs.eps
     # https://arxiv.org/pdf/1812.05905.pdf eq. 18
-    action, log_prob = action_with_log_prob(pi, S, eps, pi_fn)
-    return -alpha * (log_prob + H_target)
+    action, log_prob = action_with_log_prob(non_grad.pi, S, eps, fns.pi)
+    return -alpha * (log_prob + non_grad.H_target)
 
 
 @partial(jit, static_argnums=(1,))
 def batch_grad(params, loss_fn, batch):
     # loss_fn must be a (partially evaled) function that takes only (params, obs)
+    @jit
     def g(params, batch):
         return jnp.mean(jax.vmap(loss_fn, (None, 0))(params, batch))
 
     return value_and_grad(g)(params, batch)
+
+
+@partial(jit, static_argnums=(0, 4))
+def batch_mean_loss(
+    loss_fn: LossFn,
+    params: RT.NNParams,
+    batch: SAC_obs,
+    non_grad: SAC_params,
+    fns: SAC_fns,
+):
+    return jnp.mean(
+        jax.vmap(loss_fn, (None, 0, None, None))(params, batch, non_grad, fns)
+    )
+
+
+@partial(jit, static_argnums=(0, 4))
+def batch_grad_2(
+    loss_fn: LossFn,
+    params: RT.NNParams,
+    batch: SAC_obs,
+    non_grad: SAC_params,
+    fns: SAC_fns,
+) -> TT.Tuple[RT.Tensor, RT.Tensor]:
+    # loss_fn must be a (partially evaled) function that takes only (params, obs)
+    def batch_mean_loss(params, batch, non_grad, fns):
+        return jnp.mean(
+            jax.vmap(loss_fn, (None, 0, None, None))(params, batch, non_grad, fns)
+        )
+
+    return value_and_grad(batch_mean_loss)(params, batch, non_grad, fns)
 
 
 class Agent:
@@ -213,18 +274,15 @@ class Agent:
     def new_eps(self, shape):
         return jax.random.normal(self.new_key(), shape=shape)
 
-    # def act(self, state, eps):
-    #     pi_fn = self.pi_fn
-    #     pi = self.pi
-    #     state_transformer = self.state_transformer
-    #     action_max = self.action_max
+    def predict_pi(self, state, eps):
+        pi_fn = self.pi_fn
+        pi = self.pi
+        state_transformer_batched = self.state_transformer_batched
+        action_max = self.action_max
+        return action_max * action(pi, state_transformer_batched(state), eps, pi_fn)
 
-    #     # mu, std = self.pi_fn(self.pi, state)
-    #     # return self.action_max * jnp.tanh(
-    #     #     mu + std * jax.random.normal(self.new_key(), shape=mu.shape)
-    #     # )
-    #     # eps = jax.random.normal(self.new_key(), shape=mu.shape)
-    #     return action(pi, state, eps, pi_fn)
+    def predict_pi_opt(self, S):
+        return self.predict_pi(S, 0)
 
     def predict_q(self, S, A):
         return self.q_fn(
@@ -282,9 +340,13 @@ class Agent:
             Sn = self.state_transformer_batched(Sn)
         A = self.normalize_action(A)
 
-        self.memory_train.store_many(S, A, R1n, Sn, np.zeros(S.shape[0]))
+        self.memory_train.store_many(S, A, R1n, Sn, np.zeros((S.shape[0], 1)))
 
-    @jit
+    # @jit
+    # def init_q_batch_grad():
+    #     def q_batch_grad():
+    #         q_loss_val, q_grad = batch_grad(self.q, q_loss_agent, (S, S_n, R, A, eps))
+
     def update(self, LR=None):
         if LR is None:
             LR = self.LR
@@ -292,16 +354,19 @@ class Agent:
         S, S_n, A, R, _ = self.memory_train.sample_batch()
         eps = self.new_eps(A.shape)
 
+        @jit
         def q_loss_agent(params, obs):
             fns = (self.q_fn, self.pi_fn)
             non_grad = (self.q_targ, self.pi, self.gamma, self.alpha)
             return q_loss(params, obs, non_grad, fns)
 
+        @jit
         def pi_loss_agent(params, obs):
             non_grad = (self.q, self.alpha)
             fns = (self.pi_fn, self.q_fn)
             return pi_loss(params, obs, non_grad, fns)
 
+        @jit
         def alpha_loss_agent(params, obs):
             non_grad = (self.H_target, self.pi)
             fns = self.pi_fn
@@ -321,3 +386,42 @@ class Agent:
 
         return q_loss_val, pi_loss_val, alpha_loss_val
 
+    def get_SAC_params(self):
+        return SAC_params(
+            pi=self.pi,
+            q=self.q,
+            q_targ=self.q_targ,
+            alpha=self.alpha,
+            gamma=self.gamma,
+            H_target=self.H_target,
+        )
+
+    def get_SAC_fns(self):
+        return SAC_fns(pi=self.pi_fn, q=self.q_fn)
+
+    def update_2(self, LR=None):
+        if LR is None:
+            LR = self.LR
+
+        S, Sn, A, R, _ = self.memory_train.sample_batch()
+
+        eps = self.new_eps(A.shape)
+        batch = SAC_obs(S, A, R, Sn, eps)
+        non_grad = self.get_SAC_params()
+        fns = self.get_SAC_fns()
+
+        q_loss_val, q_grad = batch_grad_2(q_loss, self.q, batch, non_grad, fns)
+
+        pi_loss_val, pi_grad = batch_grad_2(pi_loss, self.pi, batch, non_grad, fns)
+
+        alpha_loss_val, alpha_grad = batch_grad_2(
+            alpha_loss, self.alpha, batch, non_grad, fns
+        )
+
+        # TODO look into options beyond simple gradient descent
+        self.q = stu.add_gradient(self.q, q_grad, -LR)
+        self.q_targ = stu.interpolate_networks(self.q_targ, self.q, self.tau)
+        self.pi = stu.add_gradient(self.pi, pi_grad, -LR)
+        self.alpha = self.alpha - LR * alpha_grad
+
+        return q_loss_val, pi_loss_val, alpha_loss_val
