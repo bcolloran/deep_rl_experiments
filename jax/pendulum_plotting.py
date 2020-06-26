@@ -222,15 +222,24 @@ class PendulumValuePlotter2(object):
                 ax.set_title(plot_name)
 
         if im_plots is not None:
-            for plot_name, plot_data in im_plots:
+            for plot_info in im_plots:
+                plot_name, plot_data = plot_info[0], plot_info[1]
+                plot_kwargs = None
+                if len(plot_info) == 3:
+                    plot_kwargs = plot_info[2]
                 self.axes[plot_name] = ax_list[ax_index]
                 ax_index += 1
                 self.axes[plot_name].set_title(plot_name)
 
+                if plot_kwargs is not None and plot_kwargs["diverging"]:
+                    cmap = "PRGn"
+                else:
+                    cmap = "magma"
+
                 self.images[plot_name] = self.axes[plot_name].imshow(
                     self.reshape_imdata(plot_data),
                     origin="lower",
-                    cmap="magma",
+                    cmap=cmap,
                     alpha=0.9,
                     extent=(-np.pi, np.pi, -8, 8),
                     aspect=0.5,
@@ -239,7 +248,11 @@ class PendulumValuePlotter2(object):
                 self.axes[plot_name].quiver(U, V, THDOT, THDOTDOT, pivot="mid")
 
         if traj_plots is not None:
-            for plot_name, plot_data in traj_plots:
+            for plot_info in traj_plots:
+                plot_name, plot_data = plot_info[0], plot_info[1]
+                plot_kwargs = None
+                if len(plot_info) == 3:
+                    plot_kwargs = plot_info[2]
                 ax = ax_list[ax_index]
                 self.axes[plot_name] = ax
                 ax_index += 1
@@ -262,7 +275,8 @@ class PendulumValuePlotter2(object):
             self.fig.suptitle(title, fontsize=14)
 
         if im_plots is not None:
-            for plot_name, plot_data in im_plots:
+            for plot_info in im_plots:
+                plot_name, plot_data = plot_info[0], plot_info[1]
                 self.images[plot_name].set_data(self.reshape_imdata(plot_data))
                 self.images[plot_name].set_clim(
                     vmin=plot_data.min(), vmax=plot_data.max()
@@ -278,7 +292,8 @@ class PendulumValuePlotter2(object):
                 self.axes[plot_name].autoscale_view()
 
         if traj_plots is not None:
-            for plot_name, plot_data in traj_plots:
+            for plot_info in traj_plots:
+                plot_name, plot_data = plot_info[0], plot_info[1]
                 for line_name, line_x, line_y in plot_data:
                     line_x, line_y = process_X_wrapping_series(line_x, line_y)
                     self.axes_lines[plot_name][line_name].set_data(line_x, line_y)

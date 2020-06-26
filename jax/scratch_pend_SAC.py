@@ -41,8 +41,8 @@ params = PU.default_pendulum_params
 
 episode_len = 100
 num_epochs = 1000
-episodes_per_epoch = 200
-num_random_episodes = 500
+episodes_per_epoch = 20
+num_random_episodes = 50
 samples_per_epoch = episode_len * episodes_per_epoch
 batch_size = 100
 update_every = 3
@@ -113,6 +113,8 @@ policy_episode_fn = jtu.make_agent_policynet_episode_fn(
     noise0_fn=DSN.normalNoiseInit,
 )
 
+t0 = time.time()
+
 for i in range(num_epochs):
     LR = LR_0 * LRdecay ** i
     for j in range(episodes_per_epoch):
@@ -156,7 +158,7 @@ for i in range(num_epochs):
             - agent.predict_q(plotX, -2 * np.ones((plotX.shape[0], 1))),
         )
     )
-    im_plots.append((f"pi pred", agent.predict_pi_opt(plotX)))
+    im_plots.append((f"pi pred", agent.predict_pi_opt(plotX), {"diverging": True}))
 
     L.end_epoch()
     L.epoch.obs("stdizer reward stddev", agent.reward_standardizer.observed_reward_std)
@@ -218,7 +220,7 @@ for i in range(num_epochs):
     traj_plots = [("most recent trajectory", [(f"traj", S[:, 0], S[:, 1])])]
 
     title = (
-        f"epoch {i}/{num_epochs};   LR={LR:.9f};"
+        f"epoch {i}/{num_epochs};   LR={LR:.9f};     elapsed mins: {(time.time()-t0)/60:.2f}"
         f"\nLR_0={LR_0:.7f}, decay={LRdecay}; td_steps={td_steps}; agent version"
         f"\nupdate_every={update_every}, discount={discount}, batch_size={batch_size}; episodes_per_epoch={episodes_per_epoch}"
     )
