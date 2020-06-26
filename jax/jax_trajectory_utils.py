@@ -1,95 +1,57 @@
-from typing import Callable, NewType, Any, Tuple, TypeVar
+from typing import Callable, NewType, Any, Tuple, TypeVar, Union, Dict, Hashable
 from functools import partial
 import jax.numpy as jnp
 import jax
 from jax import grad, jit, value_and_grad
-import damped_spring_noise as dsn
+import noise_procs as noise
 from numpy.random import randn
 from numpy import ndarray
-
-dampedSpringNoise = dsn.dampedSpringNoise
-
-# State = NewType("State", ndarray)
-# Action = NewType("Action", ndarray)
-# Noise = NewType("Noise", ndarray)
-# NoiseState = NewType("NoiseState", ndarray)
-
-# State: TypeAlias = ndarray
-# Action: TypeAlias = ndarray
-# Reward: TypeAlias = ndarray
-# Noise: TypeAlias = ndarray
-# NoiseState: TypeAlias = ndarray
-
-# State = ndarray
-# Action = ndarray
-# Reward = ndarray
-# Noise = ndarray
-# NoiseState = ndarray
-
-State = TypeVar("State", ndarray, jnp.ndarray)
-Action = TypeVar("Action", ndarray, jnp.ndarray)
-Reward = TypeVar("Reward", ndarray, jnp.ndarray)
-Noise = TypeVar("Noise", ndarray, jnp.ndarray)
-NoiseState = TypeVar("NoiseState", ndarray, jnp.ndarray)
-
-DynamicsFn = Callable[[State, Action], Tuple[State, Reward]]
-PolicyFn = Callable[[State], Action]
-NoisePolicyFn = Callable[[State, Noise], Action]
-NoiseFn = Callable[[NoiseState], Tuple[NoiseState, Noise]]
-
-SarTup = Tuple[State, Action, Reward]
-StateNoiseTup = Tuple[State, NoiseState]
-
-StateScanTup = Tuple[State, SarTup]
-StateScannableFn = Callable[[State, Any], StateScanTup]
-
-SarTrajTup = Tuple[State, Action, Reward]
+import rl_types as RT
 
 
-def make_scan_policy_dynamics_step_fn(
-    dynamics_fn: DynamicsFn, policy_fn: PolicyFn
-) -> StateScannableFn:
-    @jit
-    def episode_step(state: State, _) -> StateNoiseScanTup:
-        action = policy_fn(state)
-        state_next, reward = dynamics_fn(state, action)
-        return state_next, (state, action, reward)
+# def make_scan_policy_dynamics_step_fn(
+#     dynamics_fn: RT.DynamicsFn, policy_fn: RT.PolicyFn
+# ) -> RT.StateScannableFn:
+#     @jit
+#     def episode_step(state: RT.State, _) -> RT.StateNoiseScanTup:
+#         action = policy_fn(state)
+#         state_next, reward = dynamics_fn(state, action)
+#         return state_next, (state, action, reward)
 
-    return episode_step
-
-
-@partial(jit, static_argnums=(0, 3))
-def make_agent_episode(T, s0, episode_step_fn):
-    _, traj = jax.lax.scan(episode_step_fn, s0, None, length=T)
-    return traj
+#     return episode_step
 
 
-StateNoiseScanTup = Tuple[StateNoiseTup, SarTup]
-StateNoiseScannableFn = Callable[[StateNoiseTup, Any], StateNoiseScanTup]
+# @partial(jit, static_argnums=(0, 3))
+# def make_agent_episode(T, s0, episode_step_fn):
+#     _, traj = jax.lax.scan(episode_step_fn, s0, None, length=T)
+#     return traj
 
 
-def make_scan_policy_dynamics_noise_step_fn(
-    dynamics_fn: DynamicsFn, policy_fn: NoisePolicyFn, noise_fn: NoiseFn
-) -> StateNoiseScannableFn:
-    @jit
-    def episode_step(carry: StateNoiseTup, _) -> StateNoiseScanTup:
-        # print("carry", carry)
-        state, noise_state = carry
-        noise_state, eps = noise_fn(noise_state)
-        action = policy_fn(state, eps)
-        state_next, reward = dynamics_fn(state, action)
-        # print("(state_next, noise_state)", (state_next, noise_state))
-        return (state_next, noise_state), (state, action, reward)
+# def make_scan_policy_dynamics_noise_step_fn(
+#     dynamics_fn: RT.DynamicsFn, policy_fn: RT.NoisePolicyFn, noise_fn: RT.NoiseFn
+# ) -> RT.StateNoiseScannableFn:
+#     @jit
+#     def episode_step(carry: RT.StateNoiseTup, _) -> RT.StateNoiseScanTup:
+#         # print("carry", carry)
+#         state, noise_state = carry
+#         noise_state, eps = noise_fn(noise_state)
+#         action = policy_fn(state, eps)
+#         state_next, reward = dynamics_fn(state, action)
+#         # print("(state_next, noise_state)", (state_next, noise_state))
+#         return (state_next, noise_state), (state, action, reward)
 
-    return episode_step
+#     return episode_step
 
 
-@partial(jit, static_argnums=(0, 3))
-def make_agent_episode_noisy(
-    T: int, S0: State, noise0: NoiseState, episode_step_fn: StateNoiseScannableFn
-) -> SarTrajTup:
-    _, traj = jax.lax.scan(episode_step_fn, (S0, noise0), None, length=T)
-    return traj
+# @partial(jit, static_argnums=(0, 3))
+# def make_agent_episode_noisy(
+#     T: int,
+#     S0: RT.State,
+#     noise0: RT.NoiseState,
+#     episode_step_fn: RT.StateNoiseScannableFn,
+# ) -> RT.SarTrajTup:
+#     _, traj = jax.lax.scan(episode_step_fn, (S0, noise0), None, length=T)
+#     return traj
 
 
 # def make_scan_dynamics_fn(dynamics_fn:DynamicsFn) ->St:
@@ -107,36 +69,84 @@ def make_agent_episode_noisy(
 #     return traj
 
 
-def make_random_episode(
-    T: int,
-    dynamics_fn: DynamicsFn,
-    action_noise_fn: NoiseFn,
-    S0: State,
-    noise0: NoiseState,
-) -> SarTrajTup:
-    random_policy = lambda state, noise: noise
+# def make_random_episode(
+#     T: int,
+#     dynamics_fn: RT.DynamicsFn,
+#     action_noise_fn: RT.NoiseFn,
+#     S0: RT.State,
+#     noise0: RT.NoiseState,
+# ) -> RT.SarTrajTup:
+#     random_policy = lambda state, noise: noise
 
-    scan_fn = make_scan_policy_dynamics_noise_step_fn(
-        dynamics_fn, random_policy, action_noise_fn
-    )
+#     scan_fn = make_scan_policy_dynamics_noise_step_fn(
+#         dynamics_fn, random_policy, action_noise_fn
+#     )
 
-    return make_agent_episode_noisy(T, S0, noise0, scan_fn)
+#     return make_agent_episode_noisy(T, S0, noise0, scan_fn)
+
+DynamicsFn = Callable[[State, Action], Tuple[State, Reward]]
+PolicyFn = Callable[[State], Action]
+# NoisePolicyFn = Callable[[State, Noise], Action]
+# NoisePolicyNetFn = Callable[[NNParams, State, Noise], Action]
+PolicyNetFn = Callable[[PolicyNet, State, noise.Noise], Action]
+StateInitFn = Callable[[noise.PRNGKey], RT.State]
+
+StateNoiseCarryTup = Tuple[RT.State, noise.NoiseState]
 
 
 def make_random_episode_fn(
     T: int,
-    dynamics_fn: DynamicsFn,
-    action_noise_fn: NoiseFn,
-    S0_fn: Callable[[], State],
-    noise0_fn: Callable[[], NoiseState],
-) -> Callable[[], SarTrajTup]:
-    random_policy = lambda state, noise: noise
+    dynamics_fn: RT.DynamicsFn,
+    random_action_fn: noise.NoiseFn,
+    S0_fn: StateInitFn,
+    noise0_fn: noise.NoiseInitFn,
+) -> Callable[[], RT.SarTrajTup]:
+    @jit
+    def episode_step(
+        carry: StateNoiseCarryTup, _: Any
+    ) -> Tuple[StateNoiseCarryTup, RT.SarTup]:
+        state, noise_state = carry
+        noise_state, random_action = random_action_fn(noise_state)
+        state_next, reward = dynamics_fn(state, random_action)
+        return (state_next, noise_state), (state, random_action, reward)
 
-    scan_fn = make_scan_policy_dynamics_noise_step_fn(
-        dynamics_fn, random_policy, action_noise_fn
-    )
+    @jit
+    def make_episode(key: noise.PRNGKey) -> RT.SarTrajTup:
+        carry: StateNoiseCarryTup = (S0_fn(key), noise0_fn(key))
+        _, traj = jax.lax.scan(episode_step, carry, None, length=T)
+        return traj
 
-    return lambda: make_agent_episode_noisy(T, S0_fn, noise0_fn, scan_fn)
+    return make_episode
+
+
+NNParamsStateNoiseCarryTup = Tuple[RT.NNParams, RT.State, noise.NoiseState]
+
+
+def make_agent_policynet_episode_fn(
+    T: int,
+    policy_net_fn: RT.PolicyNetFn,
+    dynamics_fn: RT.DynamicsFn,
+    noise_fn: noise.NoiseFn,
+    S0_fn: StateInitFn,
+    noise0_fn: noise.NoiseInitFn,
+) -> Callable[[RT.NNParams], RT.SarTrajTup]:
+    @jit
+    def episode_step(
+        carry: NNParamsStateNoiseCarryTup, _: Any
+    ) -> Tuple[NNParamsStateNoiseCarryTup, RT.SarTup]:
+        nn_params, state, noise_state = carry
+        noise_state, eps = noise_fn(noise_state)
+        action = policy_net_fn(nn_params, state, eps)
+        state_next, reward = dynamics_fn(state, action)
+        return (nn_params, state_next, noise_state), (state, action, reward)
+
+    @jit
+    def make_episode(policy_net: RT.NNParams, key: noise.PRNGKey) -> RT.SarTrajTup:
+        carry: NNParamsStateNoiseCarryTup = (policy_net, S0_fn(key), noise0_fn(key))
+        _, traj = jax.lax.scan(episode_step, carry, None, length=T)
+        return traj
+
+    return make_episode
 
 
 # def make_random_episode(

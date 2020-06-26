@@ -21,7 +21,7 @@ from importlib import reload
 
 import jax_nn_utils as jnn
 import jax_trajectory_utils as jtu
-from damped_spring_noise import dampedSpringNoise
+from noise_procs import dampedSpringNoise
 import pendulum_utils as PU
 import pendulum_plotting as PP
 import simple_logger as SL

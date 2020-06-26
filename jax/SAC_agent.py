@@ -10,13 +10,19 @@ import numpy as np
 
 import stax_nn_utils as stu
 from replay_buffer import ReplayBuffer, SARnSn_from_SAR
-from damped_spring_noise import dampedSpringNoise
+from noise_procs import dampedSpringNoise
 import jax_nn_utils as jnn
+
+import rl_types as RT
+import jax_trajectory_utils_2 as JTU
+import typing as TT
 
 from collections import namedtuple
 
 
-def create_pi_net(obs_dim: int, action_dim: int, rngkey=jax.random.PRNGKey(0)):
+def create_pi_net(
+    obs_dim: int, action_dim: int, rngkey=jax.random.PRNGKey(0)
+) -> TT.Tuple[RT.NNParams, RT.NNParamsFn]:
     pi_init, pi_fn = serial(
         Dense(64, he_normal(), zeros),
         Relu,
@@ -39,7 +45,9 @@ def create_pi_net(obs_dim: int, action_dim: int, rngkey=jax.random.PRNGKey(0)):
     return pi_params, pi_fn
 
 
-def create_q_net(obs_dim, action_dim, rngkey=jax.random.PRNGKey(0)):
+def create_q_net(
+    obs_dim, action_dim, rngkey=jax.random.PRNGKey(0)
+) -> TT.Tuple[RT.NNParams, RT.NNParamsFn]:
     q_init, q_fn = serial(
         Dense(64, he_normal(), zeros),
         Relu,
@@ -247,6 +255,24 @@ class Agent:
 
         return act_fn
 
+    def make_policynet_act_fn(self) -> JTU.PolicyNetFn:
+        pi_fn = self.pi_fn
+        state_transformer = self.state_transformer
+        action_max = self.action_max
+
+        if state_transformer is not None:
+
+            def act_fn(policy_net, state, eps):
+                state = state_transformer(state)
+                return action_max * action(policy_net, state, eps, pi_fn)
+
+        else:
+
+            def act_fn(policy_net, state, eps):
+                return action_max * action(policy_net, state, eps, pi_fn)
+
+        return act_fn
+
     def remember_episode(self, S, A, R):
         self.reward_standardizer.observe_reward_vec(R)
         R = self.reward_standardizer.standardize_reward(R)
@@ -258,6 +284,7 @@ class Agent:
 
         self.memory_train.store_many(S, A, R1n, Sn, np.zeros(S.shape[0]))
 
+    @jit
     def update(self, LR=None):
         if LR is None:
             LR = self.LR

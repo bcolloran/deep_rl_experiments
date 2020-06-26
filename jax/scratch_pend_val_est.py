@@ -19,7 +19,7 @@ from IPython import get_ipython
 from importlib import reload
 
 import jax_nn_utils as jnn
-from damped_spring_noise import dampedSpringNoise
+from noise_procs import dampedSpringNoise
 import pendulum_utils as PU
 
 reload(PU)

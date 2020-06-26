@@ -1,6 +1,8 @@
 from collections import namedtuple
+from typing import NamedTuple
 import numpy
-from numpy.random import rand
+
+# from numpy.random import rand
 
 import jax
 from jax import grad, value_and_grad, random, jit
@@ -8,22 +10,38 @@ import jax.numpy as jnp
 
 # from jax.ops import index, index_add, index_update
 
-# from damped_spring_noise import dampedSpringNoise
-import damped_spring_noise as dsn
+# from noise_procs import dampedSpringNoise
+import noise_procs as noise
 
 import jax_nn_utils as jnn
 from jax_nn_utils import randKey
+import rl_types as RT
+import jax_trajectory_utils_2 as JTU
 
-dampedSpringNoise = dsn.dampedSpringNoise
+dampedSpringNoise = noise.dampedSpringNoise
 
-PendulumParams = namedtuple("Params", ["g", "m", "l", "dt", "max_torque", "max_speed"])
+
+# PendulumParams = namedtuple("Params", ["g", "m", "l", "dt", "max_torque", "max_speed"])
+
+
+class PendulumParams(NamedTuple):
+    g: float
+    m: float
+    l: float
+    dt: float
+    max_torque: float
+    max_speed: float
+
 
 default_pendulum_params = PendulumParams(10, 1, 1, 0.05, 2, 8)
 
 
-def random_initial_state(params=default_pendulum_params):
-    th = jnp.pi * (2 * rand() - 1)
-    thdot = 8 * (2 * rand() - 1)
+def random_initial_state(
+    key: noise.PRNGKey, params: PendulumParams = default_pendulum_params
+):
+    a, b = random.uniform(key, (2,))
+    th = jnp.pi * (2 * a - 1)
+    thdot = 8 * (2 * b - 1)
     return jnp.array([th, thdot])
 
 
@@ -34,7 +52,7 @@ def random_initial_state(params=default_pendulum_params):
 #     return jnp.hstack([jnp.cos(th), jnp.sin(th), thdot,])
 
 
-# @jit
+@jit
 def expand_state_cos_sin(S):
     th, thdot = S
     S_new = jnp.array([jnp.cos(th), jnp.sin(th), thdot])
@@ -67,6 +85,14 @@ def pendulum_step(state, u, params):
     cost = th ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
 
     return jnp.array((th, thdot)).flatten(), -cost
+
+
+def make_dyn_fn(params=default_pendulum_params) -> JTU.DynamicsFn:
+    @jit
+    def dyn_fn(S: RT.State, A: RT.Action) -> RT.SrTup:
+        return pendulum_step(S, A, params)
+
+    return dyn_fn
 
 
 @jit
