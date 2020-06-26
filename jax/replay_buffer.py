@@ -26,7 +26,9 @@ class ReplayBuffer:
         self.A1 = np.zeros((size, act_dim))  # action at current time
         self.R1n = np.zeros((size, reward_steps))  # reward at times t to n
 
-        self.Done1 = np.zeros(size)  # episode reaches terminal state after this action?
+        self.Done1 = np.zeros(
+            (size, 1)
+        )  # episode reaches terminal state after this action?
 
         self.ptr = 0
         self.size = 0
