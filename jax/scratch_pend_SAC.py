@@ -41,8 +41,8 @@ params = PU.default_pendulum_params
 
 episode_len = 100
 num_epochs = 1000
-episodes_per_epoch = 20
-num_random_episodes = 50
+episodes_per_epoch = 300
+num_random_episodes = 1000
 samples_per_epoch = episode_len * episodes_per_epoch
 batch_size = 100
 update_every = 3
