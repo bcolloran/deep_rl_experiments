@@ -14,12 +14,10 @@ def SARnSnD_from_SARD(S, A, R, D, n):
     T = R.shape[0]
     R1n = np.zeros((T, n))
     for i in range(n):
-        print(R[i:])
         R1n[: T - i, i : i + 1] = R[i:]
 
     Sn = np.zeros_like(S)
     Sn[:-n] = S[n:]
-    # D = np.zeros_like(R)
     if D[-1] == 1:
         D[-n:] = 1
 

@@ -101,7 +101,8 @@ random_episode_fn = jtu.make_random_episode_fn(
 for i in range(num_random_episodes):
     key = DSN.next_key(key)
     S, A, R = random_episode_fn(key)
-    agent.remember_episode(S, A, R)
+    D = np.zeros_like(R)
+    agent.remember_episode(S, A, R, D)
     print(f"\rrandom episode {i} of {num_random_episodes}", end="\r")
 
 policy_episode_fn = jtu.make_agent_policynet_episode_fn(
@@ -124,7 +125,8 @@ for i in range(num_epochs):
         )
         key = DSN.next_key(key)
         S, A, R = policy_episode_fn(agent.pi, key)
-        agent.remember_episode(S, A, R)
+        D = np.zeros_like(R)
+        agent.remember_episode(S, A, R, D)
         q_loss_val, pi_loss_val, alpha_loss_val = agent.update_2()
 
         # L.episode.obs(f"q loss", q_loss_val)
@@ -230,32 +232,25 @@ for i in range(num_epochs):
 
 # %%
 
-dvals = [x for x in gc.get_objects() if isinstance(x, jax.xla.DeviceValue)]
-dvals = sorted(dvals, key=lambda x: x.size, reverse=True)
+# show the agent's behavior in the gym
+import gym
 
-list(map(np.shape, dvals))
-list(map(type, dvals))
+env = gym.make("Pendulum-v0")
 
-dvals_const = [
-    x
-    for x in gc.get_objects()
-    if isinstance(x, jax.xla.DeviceValue) and isinstance(x, jax.xla.DeviceConstant)
-]
+episode_len = 400
 
-dvals_const
+state = env.reset()
+act_fn_needs_noise = agent.make_agent_act_fn()
+noise_state = DSN.mvNormalNoiseInit(key)
 
-dvals_del = [
-    x
-    for x in gc.get_objects()
-    if isinstance(x, jax.xla.DeviceValue) and x._check_if_deleted()
-]
+for t in range(episode_len):
+    env.render()
+    noise_state, eps = DSN.mvNormalStep(noise_state, 1)
+    state_th_thdot = (np.arccos(state[0]), state[2])
 
-list(map(np.shape, dvals))
-list(map(lambda x: x.dtype, dvals))
-dvals[3].size
-list(map(lambda x: x.size, dvals))
-
-32 * sum(x.size for x in gc.get_objects() if isinstance(x, jax.xla.DeviceValue))
-
-# %%
-
+    action = act_fn_needs_noise(state_th_thdot, eps)
+    next_state, reward, done, _ = env.step(action)
+    state = next_state
+    if done:
+        break
+env.close()

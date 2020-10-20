@@ -45,6 +45,16 @@ def normalStep(x: NoiseState) -> NoiseStepOut:
     return NoiseState(next_key(x.key), None), eps
 
 
+def mvNormalNoiseInit(key: PRNGKey,) -> NoiseState:
+    return NoiseState(key=key, state=None)
+
+
+@partial(jit, static_argnums=(1,))
+def mvNormalStep(x: NoiseState, dim=1) -> NoiseStepOut:
+    eps: Noise = random.normal(x.key, shape=(dim,))
+    return NoiseState(key=next_key(x.key), state=None), eps
+
+
 def dampedSpringNoiseStateInit(
     key, dim=1, x=None, v=None, sigma=0.5, theta=0.05, phi=0.01
 ) -> NoiseState:

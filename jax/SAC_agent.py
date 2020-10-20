@@ -403,7 +403,7 @@ class Agent:
     def get_SAC_fns(self):
         return SAC_fns(pi=self.pi_fn, q=self.q_fn)
 
-    def update_2(self, LR=None):
+    def update_2(self, LR=None, returnGrads=False):
         if LR is None:
             LR = self.LR
 
@@ -428,4 +428,10 @@ class Agent:
         self.pi = stu.add_gradient(self.pi, pi_grad, -LR)
         self.alpha = self.alpha - LR * alpha_grad
 
+        if returnGrads:
+            return (
+                (q_loss_val, q_grad),
+                (pi_loss_val, pi_grad),
+                (alpha_loss_val, alpha_grad),
+            )
         return q_loss_val, pi_loss_val, alpha_loss_val
