@@ -9,7 +9,7 @@ from functools import partial
 import numpy as np
 
 import stax_nn_utils as stu
-from replay_buffer import ReplayBuffer, SARnSn_from_SAR
+from replay_buffer import ReplayBuffer, SARnSnD_from_SARD
 from noise_procs import dampedSpringNoise
 import jax_nn_utils as jnn
 
@@ -39,6 +39,7 @@ class SAC_obs(TT.NamedTuple):
     A: RT.Tensor
     R: RT.Tensor
     Sn: RT.Tensor
+    D: RT.Tensor
     eps: RT.Tensor
 
 
@@ -146,7 +147,7 @@ def q_loss(
     gamma = non_grad.gamma
     alpha = non_grad.alpha
 
-    S, S_n, R, A, eps = obs.S, obs.Sn, obs.R, obs.A, obs.eps
+    S, S_n, R, A, D, eps = obs.S, obs.Sn, obs.R, obs.A, obs.D, obs.eps
     # implements https://arxiv.org/pdf/1812.05905.pdf eq. 5 (substituting in 3)
     # TODO: add second Q function and take min! (described on p.8)
     current_val_est = q_fn(q, S, A)
@@ -155,7 +156,10 @@ def q_loss(
 
     V_n = q_fn(q_targ, S_n, A_n) - alpha * log_prob_A_n  # eq 3
 
-    disc_future_val_est = gamma ** len(R) * V_n
+    # if we've reached a terminal state, there are no future rewards,
+    # so we zero out the estimate of future rewards
+    disc_future_val_est = (1 - D) * gamma ** len(R) * V_n
+    # R is a vector, so this implements TD-len(R)
     disc_rewards = jnp.sum(R * gamma ** jnp.arange(0, len(R)))
     return (current_val_est - (disc_rewards + disc_future_val_est)) ** 2
 
@@ -331,16 +335,16 @@ class Agent:
 
         return act_fn
 
-    def remember_episode(self, S, A, R):
+    def remember_episode(self, S, A, R, D):
         self.reward_standardizer.observe_reward_vec(R)
         R = self.reward_standardizer.standardize_reward(R)
-        S, A, R1n, Sn = SARnSn_from_SAR(S, A, R, self.td_steps)
+        S, A, R1n, Sn, D = SARnSnD_from_SARD(S, A, R, D, self.td_steps)
         if self.state_transformer_batched is not None:
             S = self.state_transformer_batched(S)
             Sn = self.state_transformer_batched(Sn)
         A = self.normalize_action(A)
 
-        self.memory_train.store_many(S, A, R1n, Sn, np.zeros((S.shape[0], 1)))
+        self.memory_train.store_many(S, A, R1n, Sn, D)
 
     # @jit
     # def init_q_batch_grad():
@@ -403,10 +407,10 @@ class Agent:
         if LR is None:
             LR = self.LR
 
-        S, Sn, A, R, _ = self.memory_train.sample_batch()
+        S, Sn, A, R, D = self.memory_train.sample_batch()
 
         eps = self.new_eps(A.shape)
-        batch = SAC_obs(S, A, R, Sn, eps)
+        batch = SAC_obs(S, A, R, Sn, D, eps)
         non_grad = self.get_SAC_params()
         fns = self.get_SAC_fns()
 

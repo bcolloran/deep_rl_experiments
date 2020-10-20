@@ -10,6 +10,22 @@ def SARnSn_from_SAR(S, A, R, n):
     return S1, A1, R1n, Sn
 
 
+def SARnSnD_from_SARD(S, A, R, D, n):
+    T = R.shape[0]
+    R1n = np.zeros((T, n))
+    for i in range(n):
+        print(R[i:])
+        R1n[: T - i, i : i + 1] = R[i:]
+
+    Sn = np.zeros_like(S)
+    Sn[:-n] = S[n:]
+    # D = np.zeros_like(R)
+    if D[-1] == 1:
+        D[-n:] = 1
+
+    return S, A, R1n, Sn, D
+
+
 class ReplayBuffer:
     """
     A FIFO experience replay buffer that can accomodate n-step rewards

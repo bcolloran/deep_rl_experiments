@@ -58,7 +58,7 @@ def dampedSpringNoiseStateInit(
 @jit
 def dampedSpringNoiseStep(stepIn: NoiseState, _=None) -> NoiseStepOut:
     x, v, sigma, theta, phi = stepIn.state
-    v += -theta * x - phi * v + sigma * random.normal(stepIn.key)
+    v += -theta * x - phi * v + sigma * random.normal(stepIn.key, shape=x.shape)
     x += v
     return (
         NoiseState(key=next_key(stepIn.key), state=(x, v, sigma, theta, phi)),
