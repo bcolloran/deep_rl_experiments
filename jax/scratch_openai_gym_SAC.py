@@ -41,18 +41,25 @@ get_ipython().run_line_magic("matplotlib", "inline")
 
 # %%
 # env = gym.make("BipedalWalker-v3")
-# env = gym.make("LunarLanderContinuous-v2")
+
+# %% LUNAR LANDER SETTINGS
+env = gym.make("LunarLanderContinuous-v2")
+
+max_episode_len = 1000
+num_epochs = 1000
+episodes_per_epoch = 10
+num_random_episodes = 100
+action_max = 1
+
 
 # %%  PENDULUM SETTINGS
 
-env = gym.make("Pendulum-v0")
-
-max_episode_len = 100
-num_epochs = 1000
-episodes_per_epoch = 300
-num_random_episodes = 1000
-
-action_max = 2
+# env = gym.make("Pendulum-v0")
+# max_episode_len = 100
+# num_epochs = 1000
+# episodes_per_epoch = 300
+# num_random_episodes = 1000
+# action_max = 2
 
 
 # %%
@@ -98,6 +105,8 @@ policynet_act_fn = agent.make_policynet_act_fn()
 key = random.PRNGKey(seed=seed)
 noise_state = DSN.dampedSpringNoiseStateInit(key, dim=action_dim)
 
+num_to_animate = 10
+
 for episode in range(num_random_episodes):
     state = env.reset()
     S = np.zeros((max_episode_len, state_dim))
@@ -105,7 +114,8 @@ for episode in range(num_random_episodes):
     R = np.zeros((max_episode_len, 1))
     D = np.zeros((max_episode_len, 1))
     for t in range(max_episode_len):
-        # env.render()
+        if episode % (num_random_episodes // num_to_animate) == 0:
+            env.render()
         noise_state, action = DSN.dampedSpringNoiseStep(noise_state)
         next_state, reward, done, _ = env.step(action)
         S[t] = state
@@ -133,7 +143,6 @@ plotter = PP.PendulumValuePlotter2(jupyter=True)
 L = SL.Logger()
 
 key = random.PRNGKey(seed=0)
-
 
 t0 = time.time()
 for epoch in range(num_epochs):
@@ -232,6 +241,7 @@ for epoch in range(num_epochs):
             break
 
 env.close()
+
 
 # %%
 
