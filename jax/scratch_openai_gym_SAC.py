@@ -43,23 +43,23 @@ get_ipython().run_line_magic("matplotlib", "inline")
 # env = gym.make("BipedalWalker-v3")
 
 # %% LUNAR LANDER SETTINGS
-env = gym.make("LunarLanderContinuous-v2")
+# env = gym.make("LunarLanderContinuous-v2")
 
-max_episode_len = 1000
-num_epochs = 1000
-episodes_per_epoch = 10
-num_random_episodes = 100
-action_max = 1
+# max_episode_len = 1000
+# num_epochs = 1000
+# episodes_per_epoch = 10
+# num_random_episodes = 100
+# action_max = 1
 
 
 # %%  PENDULUM SETTINGS
 
-# env = gym.make("Pendulum-v0")
-# max_episode_len = 100
-# num_epochs = 1000
-# episodes_per_epoch = 300
-# num_random_episodes = 1000
-# action_max = 2
+env = gym.make("Pendulum-v0")
+max_episode_len = 100
+num_epochs = 1000
+episodes_per_epoch = 300
+num_random_episodes = 1000
+action_max = 2
 
 
 # %%
@@ -87,7 +87,6 @@ agent = SAC.Agent(
     discount=discount,
     LR=3 * 1e-4,
     tau=0.005,
-    update_interval=update_every,
     grad_steps_per_update=1,
     seed=seed,
     state_transformer=lambda S: S,
@@ -132,7 +131,7 @@ for episode in range(num_random_episodes):
 env.close()
 
 
-# %%
+# %% ========= TRAIN =============
 
 noise_state = DSN.mvNormalNoiseInit(key)
 

@@ -235,7 +235,6 @@ class Agent:
         discount=0.99,
         LR=3 * 1e-4,
         tau=0.005,
-        update_interval=1,
         grad_steps_per_update=1,
         seed=0,
         alpha_0=0.2,
@@ -252,7 +251,6 @@ class Agent:
         self.gamma = discount
         self.LR = LR
         self.tau = tau
-        self.update_interval = update_interval
         self.grad_steps_per_update = grad_steps_per_update
         self.seed = seed
 
