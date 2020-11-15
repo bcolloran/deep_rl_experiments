@@ -28,7 +28,9 @@ class SAC_fns(TT.NamedTuple):
 class SAC_params(TT.NamedTuple):
     pi: RT.NNParams
     q: RT.NNParams
+    q2: RT.NNParams
     q_targ: RT.NNParams
+    q2_targ: RT.NNParams
     alpha: RT.Tensor
     gamma: RT.Tensor
     H_target: RT.Tensor
@@ -132,9 +134,11 @@ def pi_loss(
 ) -> RT.Tensor:
     S, eps = obs.S, obs.eps
     # https://arxiv.org/pdf/1812.05905.pdf eq. 7
-    # TODO: add second Q function and take min! (described on p.8)
     action, log_prob = action_with_log_prob(pi, S, eps, fns.pi)
-    return non_grad.alpha * log_prob - fns.q(non_grad.q, S, action)
+
+    # use second Q function and take min! (described on p.8)
+    q_est = jnp.minimum(fns.q(non_grad.q, S, action), fns.q(non_grad.q2, S, action))
+    return non_grad.alpha * log_prob - q_est
 
 
 @partial(jit, static_argnums=(3,))
@@ -143,18 +147,23 @@ def q_loss(
 ) -> RT.Tensor:
     q_fn, pi_fn = fns.q, fns.pi
     q_targ = non_grad.q_targ
+    q2_targ = non_grad.q2_targ
     pi = non_grad.pi
     gamma = non_grad.gamma
     alpha = non_grad.alpha
 
     S, S_n, R, A, D, eps = obs.S, obs.Sn, obs.R, obs.A, obs.D, obs.eps
-    # implements https://arxiv.org/pdf/1812.05905.pdf eq. 5 (substituting in 3)
-    # TODO: add second Q function and take min! (described on p.8)
+    # what follows implements https://arxiv.org/pdf/1812.05905.pdf eq. 5 (substituting in 3)
     current_val_est = q_fn(q, S, A)
 
     A_n, log_prob_A_n = action_with_log_prob(pi, S_n, eps, pi_fn)
 
-    V_n = q_fn(q_targ, S_n, A_n) - alpha * log_prob_A_n  # eq 3
+    # use two Q functions and take min! (described on p.8)
+    future_q_est_1 = q_fn(q_targ, S_n, A_n)
+    future_q_est_2 = q_fn(q2_targ, S_n, A_n)
+    future_q_est = jnp.minimum(future_q_est_1, future_q_est_2)
+
+    V_n = future_q_est - alpha * log_prob_A_n  # eq 3
 
     # if we've reached a terminal state, there are no future rewards,
     # so we zero out the estimate of future rewards
@@ -253,6 +262,11 @@ class Agent:
         self.q_fn = q_fn
         self.q = q_params
         self.q_targ = stu.copy_network(q_params)
+
+        q2_params, q2_fn = create_q_net(obs_dim, act_dim, self.new_key())
+        self.q2_fn = q2_fn
+        self.q2 = q2_params
+        self.q2_targ = stu.copy_network(q2_params)
 
         pi_params, pi_fn = create_pi_net(obs_dim, act_dim, self.new_key())
         self.pi_fn = pi_fn
@@ -394,7 +408,9 @@ class Agent:
         return SAC_params(
             pi=self.pi,
             q=self.q,
+            q2=self.q2,
             q_targ=self.q_targ,
+            q2_targ=self.q2_targ,
             alpha=self.alpha,
             gamma=self.gamma,
             H_target=self.H_target,
@@ -416,6 +432,8 @@ class Agent:
 
         q_loss_val, q_grad = batch_grad_2(q_loss, self.q, batch, non_grad, fns)
 
+        q2_loss_val, q2_grad = batch_grad_2(q_loss, self.q2, batch, non_grad, fns)
+
         pi_loss_val, pi_grad = batch_grad_2(pi_loss, self.pi, batch, non_grad, fns)
 
         alpha_loss_val, alpha_grad = batch_grad_2(
@@ -425,6 +443,9 @@ class Agent:
         # TODO look into options beyond simple gradient descent
         self.q = stu.add_gradient(self.q, q_grad, -LR)
         self.q_targ = stu.interpolate_networks(self.q_targ, self.q, self.tau)
+        self.q2 = stu.add_gradient(self.q2, q2_grad, -LR)
+        self.q2_targ = stu.interpolate_networks(self.q2_targ, self.q2, self.tau)
+
         self.pi = stu.add_gradient(self.pi, pi_grad, -LR)
         self.alpha = self.alpha - LR * alpha_grad
 
