@@ -235,7 +235,6 @@ class Agent:
         discount=0.99,
         LR=3 * 1e-4,
         tau=0.005,
-        grad_steps_per_update=1,
         seed=0,
         alpha_0=0.2,
         reward_standardizer=jnn.RewardStandardizer(),
@@ -251,7 +250,6 @@ class Agent:
         self.gamma = discount
         self.LR = LR
         self.tau = tau
-        self.grad_steps_per_update = grad_steps_per_update
         self.seed = seed
 
         self.rngkey = jax.random.PRNGKey(seed)

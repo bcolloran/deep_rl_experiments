@@ -64,7 +64,6 @@ agent = SAC.Agent(
     discount=discount,
     LR=3 * 1e-4,
     tau=0.005,
-    grad_steps_per_update=1,
     seed=seed,
     state_transformer=PU.expand_state_cos_sin,
 )
