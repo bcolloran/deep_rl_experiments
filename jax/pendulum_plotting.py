@@ -130,8 +130,13 @@ class PendulumValuePlotter(object):
 
 class PendulumValuePlotter2(object):
     def __init__(
-        self, n_grid=100, jupyter=True, pend_params=default_pendulum_params,
+        self,
+        n_grid=100,
+        jupyter=True,
+        pend_params=default_pendulum_params,
+        panel_size=5,
     ):
+        self.panel_size = panel_size
         self.axes_ready = False
         self.n_grid = n_grid
         self.pend_params = pend_params
@@ -162,7 +167,9 @@ class PendulumValuePlotter2(object):
         num_cols = int(np.ceil(num_plots / num_rows))
 
         fig, ax_table = plt.subplots(
-            num_rows, num_cols, figsize=(5 * num_cols, 5 * num_rows)
+            num_rows,
+            num_cols,
+            figsize=(self.panel_size * num_cols, self.panel_size * num_rows),
         )
         try:
 
@@ -304,6 +311,8 @@ class PendulumValuePlotter2(object):
         if self.jupyter:
             clear_output(wait=True)
             display(self.fig)
+
+        return self.fig
 
 
 def process_X_wrapping_series(xs, ys, eps=0.5):
